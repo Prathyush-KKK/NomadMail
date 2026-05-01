@@ -65,12 +65,42 @@ Then fill in provider-specific values in the ignored local config file.
 .\scripts\nomad-inbox.ps1 setup
 .\scripts\nomad-inbox.ps1 doctor
 .\scripts\nomad-inbox.ps1 providers list
+.\scripts\nomad-inbox.ps1 accounts init
+.\scripts\nomad-inbox.ps1 accounts list
+.\scripts\nomad-inbox.ps1 sync once
+.\scripts\nomad-inbox.ps1 service start
+.\scripts\nomad-inbox.ps1 service status
+.\scripts\nomad-inbox.ps1 service stop
+.\scripts\nomad-inbox.ps1 tray start
 .\scripts\nomad-inbox.ps1 config status
 .\scripts\nomad-inbox.ps1 schemas list
 .\scripts\nomad-inbox.ps1 sample message
 ```
 
 Provider commands are intentionally contract-first in this bootstrap. Implementations should plug into the provider adapter interface without changing the agent-facing message/action schema.
+
+## Optional Background Sync
+
+NomadInbox is request-driven by default. Users can also opt into background sync:
+
+```powershell
+.\scripts\nomad-inbox.ps1 accounts init
+notepad .\config\accounts.json
+.\scripts\nomad-inbox.ps1 service start
+.\scripts\nomad-inbox.ps1 service status
+```
+
+This means a user can query NomadInbox only when needed, or they can do this as well: enable a small local background worker that keeps selected accounts fresh on a schedule.
+
+`config\accounts.json` is ignored by git. Each account can be enabled or disabled independently and can define its own provider, folder, query, limit, and interval.
+
+The tray controller is optional:
+
+```powershell
+.\scripts\nomad-inbox.ps1 tray start
+```
+
+It adds a Windows system-tray icon for status, start/stop sync, opening account settings, and opening the runtime folder.
 
 ## Safety
 
@@ -82,6 +112,7 @@ The following are ignored by git:
 - `runtime/`
 - `target/`
 - `config/nomad-inbox.ps1`
+- `config/accounts.json`
 - OAuth client secrets
 - token caches
 - JSONL message/action logs

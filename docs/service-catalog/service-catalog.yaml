@@ -14,6 +14,34 @@ services:
       - provider-registry
       - safety-gate
       - schema-contracts
+  - name: background-sync-worker
+    type: local-user-session-worker
+    status: bootstrapped
+    criticality: medium
+    interfaces:
+      - powershell
+      - config/accounts.json
+      - data/sync-status.json
+    responsibilities:
+      - optional-periodic-sync
+      - per-account-scheduling
+      - status-publication
+    notes:
+      - Disabled by default.
+      - Runs in the signed-in user session so desktop providers can work.
+      - Not a privileged Windows Service in the bootstrap version.
+  - name: system-tray-controller
+    type: local-user-interface
+    status: bootstrapped
+    criticality: medium
+    interfaces:
+      - windows-forms-notifyicon
+      - powershell-cli
+    responsibilities:
+      - start-background-sync
+      - stop-background-sync
+      - show-sync-status
+      - open-account-settings
   - name: gmail-api-provider
     type: provider-adapter
     status: planned
@@ -30,4 +58,3 @@ services:
     status: planned
     auth:
       - local-outlook-profile
-

@@ -10,4 +10,37 @@ channels:
   data/actions.jsonl:
     subscribe:
       summary: Audit records for mutating actions
-
+  data/sync-status.json:
+    subscribe:
+      summary: Latest background sync worker state and per-account sync results
+      message:
+        name: SyncStatus
+        payload:
+          type: object
+          properties:
+            service:
+              type: string
+            worker:
+              type: string
+            lastRunAt:
+              type: string
+              format: date-time
+            nextRunAt:
+              type: string
+              format: date-time
+            accounts:
+              type: array
+              items:
+                type: object
+                properties:
+                  accountId:
+                    type: string
+                  provider:
+                    type: string
+                  status:
+                    type: string
+                  synced:
+                    type: integer
+            updatedAt:
+              type: string
+              format: date-time

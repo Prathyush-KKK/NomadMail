@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "defaultIntervalSeconds": 300,
+  "accounts": [
+    {
+      "id": "personal-gmail",
+      "displayName": "Personal Gmail",
+      "provider": "gmail-api",
+      "enabled": false,
+      "folder": "Inbox",
+      "query": "",
+      "limit": 25,
+      "intervalSeconds": 300
+    },
+    {
+      "id": "work-outlook-web",
+      "displayName": "Work Outlook Web",
+      "provider": "outlook-graph",
+      "enabled": false,
+      "folder": "Inbox",
+      "query": "",
+      "limit": 25,
+      "intervalSeconds": 300
+    },
+    {
+      "id": "desktop-outlook",
+      "displayName": "Outlook Desktop",
+      "provider": "outlook-desktop",
+      "enabled": false,
+      "folder": "Inbox",
+      "query": "",
+      "limit": 25,
+      "intervalSeconds": 300
+    }
+  ]
+}

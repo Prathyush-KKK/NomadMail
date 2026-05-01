@@ -31,6 +31,8 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 ## MVP Scope
 
 - Local PowerShell CLI.
+- Optional user-session background sync worker.
+- Optional Windows system-tray controller.
 - Provider adapter contract.
 - JSON message/action schemas.
 - Local JSONL runtime store.
@@ -45,12 +47,14 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 - Shipping personal config.
 - Hosted SaaS deployment.
 - Permanent delete without explicit multi-step confirmation.
-- Background daemon implementation.
+- Privileged Windows Service installation.
+- Always-on sync by default.
 
 ## Success Criteria
 
 - Fresh clone starts with no personal data.
 - `setup`, `doctor`, `providers list`, and schema discovery run locally.
+- Users can optionally start background sync and inspect status without making it mandatory.
+- Users can configure per-account sync settings through ignored local config.
 - Provider implementations can be added without changing the normalized data contracts.
 - Git ignores runtime data and secrets by default.
-

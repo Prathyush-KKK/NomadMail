@@ -19,12 +19,63 @@ paths:
       responses:
         "200":
           description: Provider list
+  /accounts:
+    get:
+      summary: List configured accounts and background sync settings
+      responses:
+        "200":
+          description: Account list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  defaultIntervalSeconds:
+                    type: integer
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Account"
   /messages/sync:
     post:
       summary: Sync provider messages into local store
       responses:
         "200":
           description: Sync result
+  /sync/once:
+    post:
+      summary: Run one sync cycle for enabled accounts
+      responses:
+        "200":
+          description: Sync cycle result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncResult"
+  /service/status:
+    get:
+      summary: Show optional background sync worker status
+      responses:
+        "200":
+          description: Worker status and latest sync status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceStatus"
+  /service/start:
+    post:
+      summary: Start optional user-session background sync
+      responses:
+        "200":
+          description: Worker started or already running
+  /service/stop:
+    post:
+      summary: Stop optional user-session background sync
+      responses:
+        "200":
+          description: Worker stopped or already stopped
   /messages:
     get:
       summary: Search local messages
@@ -38,4 +89,70 @@ paths:
       responses:
         "200":
           description: Message results
-
+components:
+  schemas:
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        provider:
+          type: string
+          enum: [gmail-api, outlook-graph, outlook-desktop, sample]
+        enabled:
+          type: boolean
+        folder:
+          type: string
+        queryConfigured:
+          type: boolean
+        limit:
+          type: integer
+        intervalSeconds:
+          type: integer
+    SyncResult:
+      type: object
+      properties:
+        status:
+          type: string
+        accountCount:
+          type: integer
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              accountId:
+                type: string
+              provider:
+                type: string
+              status:
+                type: string
+              synced:
+                type: integer
+              reason:
+                type: string
+                nullable: true
+    ServiceStatus:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        worker:
+          type: string
+          enum: [running, stopped]
+        pid:
+          type: integer
+          nullable: true
+        pidPath:
+          type: string
+        statusPath:
+          type: string
+        logPath:
+          type: string
+        syncStatus:
+          type: object
+          nullable: true

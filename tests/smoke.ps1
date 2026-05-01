@@ -9,11 +9,16 @@ if ($doctor.status -ne "ok") { throw "doctor failed" }
 $providers = & $cli providers list | ConvertFrom-Json
 if (@($providers.providers).Count -lt 3) { throw "expected three providers" }
 
+$accounts = & $cli accounts list | ConvertFrom-Json
+if (@($accounts.accounts).Count -lt 3) { throw "expected account templates" }
+
+$status = & $cli service status | ConvertFrom-Json
+if ($status.status -ne "ok") { throw "service status failed" }
+
 $sample = & $cli sample message | ConvertFrom-Json
 if ($sample.provider -ne "sample") { throw "sample message failed" }
 
 [pscustomobject]@{
     status = "ok"
-    tests = @("doctor", "providers list", "sample message")
+    tests = @("doctor", "providers list", "accounts list", "service status", "sample message")
 } | ConvertTo-Json -Depth 5
-

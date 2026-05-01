@@ -26,8 +26,17 @@ Setup:
 
 Discovery:
   .\scripts\nomad-inbox.ps1 providers list
+  .\scripts\nomad-inbox.ps1 accounts init
+  .\scripts\nomad-inbox.ps1 accounts list
   .\scripts\nomad-inbox.ps1 schemas list
   .\scripts\nomad-inbox.ps1 sample message
+
+Background sync:
+  .\scripts\nomad-inbox.ps1 sync once
+  .\scripts\nomad-inbox.ps1 service start
+  .\scripts\nomad-inbox.ps1 service status
+  .\scripts\nomad-inbox.ps1 service stop
+  .\scripts\nomad-inbox.ps1 tray start
 
 This bootstrap does not ship mailbox data, token caches, or secrets.
 "@
@@ -52,6 +61,35 @@ try {
         "providers" {
             if ($Subcommand -ne "list") { throw "Unsupported providers subcommand. Use: providers list" }
             Get-NomadInboxProviders | ConvertTo-Json -Depth 20
+        }
+        "accounts" {
+            switch ($Subcommand) {
+                "init" { Initialize-NomadInboxAccountsConfig | ConvertTo-Json -Depth 20 }
+                "list" { Get-NomadInboxAccounts | ConvertTo-Json -Depth 30 }
+                default { throw "Unsupported accounts subcommand. Use: accounts init|list" }
+            }
+        }
+        "sync" {
+            if ($Subcommand -ne "once") { throw "Unsupported sync subcommand. Use: sync once" }
+            Invoke-NomadInboxSyncOnce | ConvertTo-Json -Depth 40
+        }
+        "service" {
+            switch ($Subcommand) {
+                "start" { Start-NomadInboxService | ConvertTo-Json -Depth 50 }
+                "stop" { Stop-NomadInboxService | ConvertTo-Json -Depth 30 }
+                "restart" {
+                    Stop-NomadInboxService | Out-Null
+                    Start-NomadInboxService | ConvertTo-Json -Depth 50
+                }
+                "status" { Get-NomadInboxServiceStatus | ConvertTo-Json -Depth 50 }
+                default { throw "Unsupported service subcommand. Use: service start|stop|restart|status" }
+            }
+        }
+        "tray" {
+            if ($Subcommand -ne "start") { throw "Unsupported tray subcommand. Use: tray start" }
+            $tray = Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"
+            Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tray) -WorkingDirectory $repoRoot | Out-Null
+            [pscustomobject]@{ status = "ok"; service = "NomadInbox"; tray = "started" } | ConvertTo-Json -Depth 10
         }
         "config" {
             if ($Subcommand -ne "status") { throw "Unsupported config subcommand. Use: config status" }
@@ -79,4 +117,3 @@ try {
     } | ConvertTo-Json -Depth 10
     exit 1
 }
-

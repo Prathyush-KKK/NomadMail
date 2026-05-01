@@ -10,8 +10,11 @@ NomadInbox processes are documented explicitly so provider behavior, safety rule
 | Health check | `doctor` command | Repo files, config, provider status | JSON health result | None unless provider checks cache | Runbooks, SLOs |
 | Provider discovery | `providers list` | Provider registry | Provider capability JSON | None | Service catalog, C4 container diagram |
 | Config inspection | `config status` | Local env/config | Redacted config status | None | Config template, runbooks |
+| Account sync configuration | `accounts init`, `accounts list` | `config/accounts.example.json`, local `config/accounts.json` | Redacted account status | Local ignored config | README, config template, runbooks |
 | Schema discovery | `schemas list` | Schema files | Schema location JSON | None | Schemas, OpenAPI/AsyncAPI |
 | Message sync | Provider sync command | Provider, folder/query, limit/cursor | Normalized messages | `data/messages.jsonl` | Schemas, AsyncAPI, runbooks, SLOs |
+| Background sync worker | `service start` | Enabled accounts and intervals | Periodic sync runs and status JSON | `data/sync-status.json`, pid/log files | C4, runbook, SLOs |
+| System tray controller | `tray start` | Local CLI and account config | Tray menu for start/stop/status/settings | User-session tray process | Runbook, README |
 | Local search | Search command/API | Query/filter fields | Message result summaries | Reads message store | OpenAPI, runbooks, SLOs |
 | Full message get | Get command/API | Message ID | Full message body/headers/attachments metadata | May hydrate provider data | Schemas, OpenAPI, runbooks |
 | Attachment save | Attachment command/API | Message ID, attachment ID, output dir | Local attachment file | `data/attachments/` or selected output | Schemas, runbooks, safety notes |
@@ -40,4 +43,3 @@ NomadInbox processes are documented explicitly so provider behavior, safety rule
 | Safety rule change | ADR, architecture overview, runbooks, SLOs |
 | Runtime storage change | Architecture overview, C4 container, AsyncAPI, runbook, SLOs |
 | Auth flow change | Provider README, runbook, service catalog, config example |
-

@@ -43,3 +43,23 @@ sequenceDiagram
     Core->>Audit: action=sendDraft confirmed=true
 ```
 
+## Optional Background Sync Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Tray
+    participant CLI
+    participant Worker
+    participant Core
+    participant Store
+
+    User->>Tray: Start background sync
+    Tray->>CLI: service start
+    CLI->>Worker: launch user-session process
+    Worker->>Core: sync once
+    Core->>Store: write messages/actions/status
+    User->>Tray: Show sync status
+    Tray->>CLI: service status
+    CLI-->>Tray: status JSON
+```

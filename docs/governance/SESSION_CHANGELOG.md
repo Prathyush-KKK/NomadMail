@@ -1,5 +1,14 @@
 ﻿# Session Architecture Changelog
 
+## 2026-05-01 - Optional Background Sync And Tray
+
+Summary:
+
+- Added optional user-session background sync worker, per-account sync config, service controls, tray controller, and updated architecture artifacts.
+
+Session note:
+
+- docs/governance/session-updates/20260501-191202-optional-background-sync-and-tray.md
 ## 2026-05-01 - NomadInbox Architecture Bootstrap
 
 Summary:
@@ -23,5 +32,6 @@ Affected areas:
 - Local-first runtime model.
 - Provider adapter architecture.
 - Documentation update process.
+
 
 

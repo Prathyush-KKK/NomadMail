@@ -5,7 +5,10 @@ $required = @(
     "README.md",
     ".gitignore",
     "config\nomad-inbox.example.ps1",
+    "config\accounts.example.json",
     "scripts\nomad-inbox.ps1",
+    "scripts\nomad-inbox-worker.ps1",
+    "scripts\nomad-inbox-tray.ps1",
     "scripts\new-architecture-change.ps1",
     "scripts\session-closeout.ps1",
     "src\NomadInbox\NomadInbox.psm1",
@@ -18,9 +21,11 @@ $required = @(
     "docs\c4\02-container.md",
     "docs\c4\03-dynamic-flows.md",
     "docs\adrs\0001-create-fresh-nomadinbox-repository.md",
+    "docs\adrs\0004-optional-background-sync-and-tray.md",
     "docs\service-catalog\service-catalog.yaml",
     "docs\processes\process-catalog.md",
     "docs\runbooks\local-bootstrap.md",
+    "docs\runbooks\background-sync-and-tray.md",
     "docs\slo\nomadinbox-slo.md",
     "docs\governance\ARCHITECTURE_UPDATE_PROCESS.md",
     "docs\governance\SESSION_CHANGELOG.md",
@@ -44,7 +49,8 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         $_ -match '^target/' -or
         $_ -match 'token-cache' -or
         $_ -match 'client_secret' -or
-        $_ -match '^config/nomad-inbox\.ps1$'
+        $_ -match '^config/nomad-inbox\.ps1$' -or
+        $_ -match '^config/accounts\.json$'
     })
 }
 
