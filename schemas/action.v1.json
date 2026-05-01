@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nomadinbox.local/schemas/action.v1.json",
+  "title": "NomadInbox Action",
+  "type": "object",
+  "required": ["actionId", "timestamp", "provider", "actionType", "status"],
+  "properties": {
+    "actionId": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "provider": { "type": "string", "enum": ["gmail-api", "outlook-graph", "outlook-desktop", "sample"] },
+    "messageId": { "type": ["string", "null"] },
+    "draftId": { "type": ["string", "null"] },
+    "actionType": {
+      "type": "string",
+      "enum": ["sync", "get", "search", "createDraft", "replyDraft", "replyAllDraft", "attach", "sendDraft", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash"]
+    },
+    "requiresUserConfirmation": { "type": "boolean" },
+    "confirmedByUser": { "type": "boolean" },
+    "status": { "type": "string", "enum": ["success", "error", "pendingConfirmation", "dryRun"] },
+    "input": { "type": "object" },
+    "result": { "type": "object" },
+    "error": { "type": ["string", "null"] }
+  }
+}
+

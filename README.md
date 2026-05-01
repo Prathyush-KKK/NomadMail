@@ -1,0 +1,105 @@
+# NomadInbox
+
+NomadInbox is a local-first mailbox visibility and action service for coding agents.
+
+It gives agents a safe, provider-neutral way to read, search, inspect, draft, and act on email across:
+
+- Outlook Desktop
+- Outlook / Microsoft 365 via Microsoft Graph
+- Gmail / Google Workspace via Gmail API
+
+This repository is intentionally fresh. It does not include copied mailbox data, OAuth token caches, local credential files, or user-specific message exports.
+
+## Product Goal
+
+Expose inbox data as agent-readable JSON while keeping mailbox mutation controlled, auditable, and explicit.
+
+Core principles:
+
+- Read operations are allowed after provider authentication.
+- Draft creation is separate from send.
+- Sending always requires explicit confirmation.
+- Provider-specific message IDs are preserved.
+- Runtime data stays local and ignored by git.
+- Data contracts stay stable across providers.
+
+## Project Location
+
+```text
+C:\Users\prat\Documents\osm\NomadInbox
+```
+
+## Quick Start
+
+```powershell
+cd C:\Users\prat\Documents\osm\NomadInbox
+.\scripts\nomad-inbox.ps1 setup
+.\scripts\nomad-inbox.ps1 doctor
+.\scripts\nomad-inbox.ps1 providers list
+```
+
+Copy the local config template before connecting real providers:
+
+```powershell
+Copy-Item .\config\nomad-inbox.example.ps1 .\config\nomad-inbox.ps1
+```
+
+Then fill in provider-specific values in the ignored local config file.
+
+## Repository Map
+
+| Path | Purpose |
+|---|---|
+| `scripts/` | CLI entrypoints and validation scripts |
+| `src/NomadInbox/` | Core PowerShell module and provider contract |
+| `providers/` | Provider-specific adapters and setup notes |
+| `schemas/` | Agent-facing JSON contracts |
+| `docs/` | Product, architecture, ADRs, runbooks, service catalog, SLOs |
+| `api/` | Future OpenAPI and AsyncAPI contracts |
+| `config/` | Safe example config only |
+| `tests/` | Smoke/validation checks |
+
+## Available Commands
+
+```powershell
+.\scripts\nomad-inbox.ps1 setup
+.\scripts\nomad-inbox.ps1 doctor
+.\scripts\nomad-inbox.ps1 providers list
+.\scripts\nomad-inbox.ps1 config status
+.\scripts\nomad-inbox.ps1 schemas list
+.\scripts\nomad-inbox.ps1 sample message
+```
+
+Provider commands are intentionally contract-first in this bootstrap. Implementations should plug into the provider adapter interface without changing the agent-facing message/action schema.
+
+## Safety
+
+NomadInbox starts with no connected mailbox. Runtime files are created only when you run setup or connect providers.
+
+The following are ignored by git:
+
+- `data/`
+- `runtime/`
+- `target/`
+- `config/nomad-inbox.ps1`
+- OAuth client secrets
+- token caches
+- JSONL message/action logs
+
+## Validation
+
+```powershell
+.\scripts\validate.ps1
+```
+
+The validation script checks required docs, schemas, scripts, and secret-ignore rules.
+
+## Architecture Updates
+
+When the architecture or project behavior changes during a session, update the affected artifacts and run:
+
+```powershell
+.\scripts\session-closeout.ps1 -Title "Short change title" -Summary "What changed and why"
+```
+
+This records a session update, appends the architecture changelog, and validates the required documentation pack.

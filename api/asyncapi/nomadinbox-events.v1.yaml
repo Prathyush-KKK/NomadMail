@@ -1,0 +1,13 @@
+asyncapi: 2.6.0
+info:
+  title: NomadInbox Local Events
+  version: 0.1.0
+  description: JSONL event contracts for local message sync and action audit records.
+channels:
+  data/messages.jsonl:
+    subscribe:
+      summary: Message records written after sync
+  data/actions.jsonl:
+    subscribe:
+      summary: Audit records for mutating actions
+

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nomadinbox.local/schemas/message.v1.json",
+  "title": "NomadInbox Message",
+  "type": "object",
+  "required": ["id", "provider", "providerMessageId", "subject", "from", "receivedAt"],
+  "properties": {
+    "id": { "type": "string" },
+    "provider": { "type": "string", "enum": ["gmail-api", "outlook-graph", "outlook-desktop", "sample"] },
+    "providerMessageId": { "type": "string" },
+    "conversationId": { "type": ["string", "null"] },
+    "folder": { "type": ["string", "null"] },
+    "subject": { "type": "string" },
+    "from": { "$ref": "#/$defs/address" },
+    "to": { "type": "array", "items": { "$ref": "#/$defs/address" } },
+    "cc": { "type": "array", "items": { "$ref": "#/$defs/address" } },
+    "receivedAt": { "type": "string", "format": "date-time" },
+    "sentAt": { "type": ["string", "null"] },
+    "snippet": { "type": ["string", "null"] },
+    "bodyText": { "type": ["string", "null"] },
+    "bodyHtml": { "type": ["string", "null"] },
+    "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+    "unread": { "type": "boolean" },
+    "flagged": { "type": "boolean" },
+    "importance": { "type": ["string", "null"] },
+    "categories": { "type": "array", "items": { "type": "string" } },
+    "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" } },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment"]
+      }
+    }
+  },
+  "$defs": {
+    "address": {
+      "type": "object",
+      "required": ["email"],
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "email": { "type": "string" }
+      }
+    },
+    "attachment": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "contentType": { "type": ["string", "null"] },
+        "sizeBytes": { "type": ["integer", "null"] },
+        "localPath": { "type": ["string", "null"] }
+      }
+    }
+  }
+}
+

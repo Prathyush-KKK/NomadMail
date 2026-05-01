@@ -1,0 +1,33 @@
+services:
+  - name: nomadinbox-cli
+    type: local-cli
+    status: bootstrapped
+    criticality: high
+    interfaces:
+      - powershell
+      - json-output
+  - name: nomadinbox-core
+    type: local-core
+    status: bootstrapped
+    criticality: high
+    responsibilities:
+      - provider-registry
+      - safety-gate
+      - schema-contracts
+  - name: gmail-api-provider
+    type: provider-adapter
+    status: planned
+    auth:
+      - google-oauth
+      - workspace-domain-delegation
+  - name: outlook-graph-provider
+    type: provider-adapter
+    status: planned
+    auth:
+      - microsoft-graph-oauth
+  - name: outlook-desktop-provider
+    type: provider-adapter
+    status: planned
+    auth:
+      - local-outlook-profile
+

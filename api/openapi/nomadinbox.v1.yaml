@@ -1,0 +1,41 @@
+openapi: 3.0.3
+info:
+  title: NomadInbox Local API
+  version: 0.1.0
+  description: Future local HTTP wrapper over NomadInbox provider operations.
+servers:
+  - url: http://127.0.0.1:8791
+    description: Local-only API
+paths:
+  /health:
+    get:
+      summary: Check local service health
+      responses:
+        "200":
+          description: Healthy
+  /providers:
+    get:
+      summary: List provider configuration and capabilities
+      responses:
+        "200":
+          description: Provider list
+  /messages/sync:
+    post:
+      summary: Sync provider messages into local store
+      responses:
+        "200":
+          description: Sync result
+  /messages:
+    get:
+      summary: Search local messages
+      parameters:
+        - name: query
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 10 }
+      responses:
+        "200":
+          description: Message results
+

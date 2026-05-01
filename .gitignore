@@ -1,0 +1,27 @@
+# Runtime data and local state
+data/
+runtime/
+target/
+logs/
+downloads/
+*.log
+*.jsonl
+*.sqlite
+*.sqlite3
+*.db
+
+# Secrets and local config
+.env
+.env.*
+!*.env.example
+config/nomad-inbox.ps1
+client_secret*.json
+*token-cache*.json
+*credentials*.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
