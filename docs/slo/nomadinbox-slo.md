@@ -17,6 +17,8 @@ These are local operational targets, not external service-level agreements.
 | Background sync freshness | Current time - `data/sync-status.json.updatedAt` while worker is running |
 | Worker availability | Successful `service status` checks reporting worker state / status checks |
 | Account sync coverage | Enabled accounts attempted / enabled accounts in each sync cycle |
+| Archive import success | Successfully parsed archive messages / archive messages attempted |
+| Backup status freshness | `backup status` reflects latest sync and import status files |
 
 ## Bootstrap Targets
 
@@ -29,6 +31,8 @@ These are local operational targets, not external service-level agreements.
 | Service status | 100% returns JSON even when worker is stopped |
 | Worker start/stop | Start and stop complete without requiring administrator privileges |
 | Background freshness | Status file updated within 2x the configured interval while worker is running |
+| Archive dry-run safety | Dry-run import writes no archive message records |
+| Imported mail safety | 100% of archive imported messages set `actionable=false` |
 
 ## Operating Targets
 
@@ -38,3 +42,5 @@ These are local operational targets, not external service-level agreements.
 | Optional background mode | User can enable/disable per account | Controlled by ignored `config/accounts.json` |
 | Tray controller | Menu exposes start, stop, status, config, and runtime folder actions | Tray is an activity indicator, not a full app |
 | Audit stream | 100% of sync attempts create an action record in bootstrap mode | Real provider adapters should preserve this behavior |
+| Archive import | `eml`, `mbox`, and `jsonl` imports return counts and provenance | PST/MSG remain planned |
+| User prompts | `backup status` always tells users current backup depth and next useful action | Prompts are derived from local stats |

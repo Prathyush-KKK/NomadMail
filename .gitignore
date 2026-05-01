@@ -9,6 +9,12 @@ downloads/
 *.sqlite
 *.sqlite3
 *.db
+*.mbox
+*.eml
+*.pst
+*.msg
+mail-exports/
+import-staging/
 
 # Secrets and local config
 .env

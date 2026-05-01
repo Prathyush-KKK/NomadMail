@@ -6,7 +6,7 @@
   "required": ["id", "provider", "providerMessageId", "subject", "from", "receivedAt"],
   "properties": {
     "id": { "type": "string" },
-    "provider": { "type": "string", "enum": ["gmail-api", "outlook-graph", "outlook-desktop", "sample"] },
+    "provider": { "type": "string", "enum": ["gmail-api", "outlook-graph", "outlook-desktop", "archive-import", "sample"] },
     "providerMessageId": { "type": "string" },
     "conversationId": { "type": ["string", "null"] },
     "folder": { "type": ["string", "null"] },
@@ -31,7 +31,13 @@
         "type": "string",
         "enum": ["reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment"]
       }
-    }
+    },
+    "sourceType": { "type": ["string", "null"], "enum": ["live-sync", "archive-import", null] },
+    "sourceProvider": { "type": ["string", "null"] },
+    "sourcePathHash": { "type": ["string", "null"] },
+    "importBatchId": { "type": ["string", "null"] },
+    "actionable": { "type": "boolean", "default": true },
+    "importedAt": { "type": ["string", "null"], "format": "date-time" }
   },
   "$defs": {
     "address": {
@@ -55,4 +61,3 @@
     }
   }
 }
-

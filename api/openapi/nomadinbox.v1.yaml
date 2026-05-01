@@ -54,6 +54,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SyncResult"
+  /backup/status:
+    get:
+      summary: Show live sync and archive import backup depth with user prompts
+      responses:
+        "200":
+          description: Backup/context status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupStatus"
+  /import/status:
+    get:
+      summary: Show latest archive import status
+      responses:
+        "200":
+          description: Latest import status
+  /import/{format}:
+    post:
+      summary: Import read-only mail export context
+      parameters:
+        - name: format
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [eml, mbox, jsonl]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path:
+                  type: string
+                source:
+                  type: string
+                maxMessages:
+                  type: integer
+                includeBodies:
+                  type: boolean
+                dryRun:
+                  type: boolean
+      responses:
+        "200":
+          description: Import result
   /service/status:
     get:
       summary: Show optional background sync worker status
@@ -156,3 +203,20 @@ components:
         syncStatus:
           type: object
           nullable: true
+    BackupStatus:
+      type: object
+      properties:
+        status:
+          type: string
+        liveSyncedMessages:
+          type: integer
+        archiveImportedMessages:
+          type: integer
+        archiveIndexedMessages:
+          type: integer
+        totalBackedUpMessages:
+          type: integer
+        userPrompts:
+          type: array
+          items:
+            type: string

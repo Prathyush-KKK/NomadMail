@@ -19,6 +19,26 @@ sequenceDiagram
     CLI-->>Agent: agent-readable output
 ```
 
+## Archive Import Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant CLI
+    participant Importer
+    participant Archive
+    participant Status
+
+    User->>CLI: import mbox --path Mail.mbox --source gmail-takeout
+    CLI->>Importer: parse export with provenance
+    Importer->>Archive: write archive-messages.jsonl
+    Importer->>Archive: write archive-index.jsonl
+    Importer->>Status: write import-status.json
+    CLI-->>User: imported count plus read-only reminder
+    User->>CLI: backup status
+    CLI-->>User: live sync count, archive count, next suggested action
+```
+
 ## Confirmed Send Flow
 
 ```mermaid

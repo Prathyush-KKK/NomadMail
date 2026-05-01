@@ -19,6 +19,8 @@ Command Layer
   +-- Safety Gate
   +-- Optional Sync Worker
   +-- Optional Tray Controller
+  +-- Archive Importer
+  +-- Backup Status / User Prompts
   +-- Message Store
   +-- Action Audit Log
   |
@@ -35,6 +37,9 @@ Provider Adapters
 Runtime data is local and ignored by git:
 
 - `data/messages.jsonl`
+- `data/archive-messages.jsonl`
+- `data/archive-index.jsonl`
+- `data/import-status.json`
 - `data/actions.jsonl`
 - `data/sync-status.json`
 - `data/sync-worker.pid`
@@ -42,6 +47,7 @@ Runtime data is local and ignored by git:
 - `data/attachments/`
 - token cache files
 - provider-specific temporary files
+- local mail export files such as `.mbox`, `.eml`, `.pst`, and `.msg`
 
 Per-account background sync settings are local and ignored by git:
 
@@ -74,6 +80,35 @@ Providers should expose these capabilities where supported:
 - `move`
 - `archive`
 - `trash`
+
+## Archive Import Contract
+
+Archive import is an optional context-enrichment layer. It is not the primary live mailbox control path.
+
+Supported bootstrap formats:
+
+- `eml`: one `.eml` file or a folder of `.eml` files.
+- `mbox`: Gmail Takeout-style mailbox export.
+- `jsonl`: existing NomadInbox-style message records.
+
+Planned formats:
+
+- `pst`
+- `msg`
+
+Imported records use the same message schema but set:
+
+- `provider = archive-import`
+- `sourceType = archive-import`
+- `actionable = false`
+- `capabilities = []`
+- `sourceProvider`, `sourcePathHash`, and `importBatchId` for provenance
+
+Archive data writes to `data/archive-messages.jsonl` and `data/archive-index.jsonl`. The index is a disposable search projection; the message record preserves normalized metadata and optional body text. Full archive body storage requires explicit `--include-bodies`.
+
+## Backup Status And User Prompts
+
+`backup status` combines live sync and archive import stats. It reports how many live synced messages and archive imported messages are locally available, then emits user-facing prompts that guide the user to sync or import more mail exports.
 
 ## Safety Gate
 
@@ -119,6 +154,7 @@ It is a small Windows Forms NotifyIcon process, not a full desktop app.
 Bootstrap:
 
 - JSONL for messages and actions.
+- JSONL for read-only archive imports and archive search projection.
 
 Next:
 

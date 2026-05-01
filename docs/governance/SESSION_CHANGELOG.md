@@ -1,5 +1,14 @@
 ﻿# Session Architecture Changelog
 
+## 2026-05-01 - Read Only Archive Import
+
+Summary:
+
+- Added read-only archive import for EML, MBOX, and message JSONL exports, backup status prompts that combine sync/import depth, schema provenance fields, and matching architecture artifacts.
+
+Session note:
+
+- docs/governance/session-updates/20260501-200738-read-only-archive-import.md
 ## 2026-05-01 - Optional Background Sync And Tray
 
 Summary:
@@ -32,6 +41,7 @@ Affected areas:
 - Local-first runtime model.
 - Provider adapter architecture.
 - Documentation update process.
+
 
 
 

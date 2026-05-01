@@ -28,8 +28,16 @@ Discovery:
   .\scripts\nomad-inbox.ps1 providers list
   .\scripts\nomad-inbox.ps1 accounts init
   .\scripts\nomad-inbox.ps1 accounts list
+  .\scripts\nomad-inbox.ps1 backup status
   .\scripts\nomad-inbox.ps1 schemas list
   .\scripts\nomad-inbox.ps1 sample message
+
+Archive context import:
+  .\scripts\nomad-inbox.ps1 import status
+  .\scripts\nomad-inbox.ps1 import eml --path .\mail-export --source outlook-export
+  .\scripts\nomad-inbox.ps1 import mbox --path .\takeout\Mail.mbox --source gmail-takeout
+  .\scripts\nomad-inbox.ps1 import jsonl --path .\messages.jsonl --source nomadinbox-export
+  Add --include-bodies only when the user explicitly wants full archive body storage.
 
 Background sync:
   .\scripts\nomad-inbox.ps1 sync once
@@ -44,6 +52,7 @@ This bootstrap does not ship mailbox data, token caches, or secrets.
 
 $Command = if ($Argv.Count -gt 0) { $Argv[0] } else { $null }
 $Subcommand = if ($Argv.Count -gt 1) { $Argv[1] } else { $null }
+$RemainingArgs = if ($Argv.Count -gt 2) { @($Argv[2..($Argv.Count - 1)]) } else { @() }
 
 try {
     if ([string]::IsNullOrWhiteSpace($Command) -or $Command -in @("-h", "--help", "help")) {
@@ -67,6 +76,30 @@ try {
                 "init" { Initialize-NomadInboxAccountsConfig | ConvertTo-Json -Depth 20 }
                 "list" { Get-NomadInboxAccounts | ConvertTo-Json -Depth 30 }
                 default { throw "Unsupported accounts subcommand. Use: accounts init|list" }
+            }
+        }
+        "backup" {
+            if ($Subcommand -ne "status") { throw "Unsupported backup subcommand. Use: backup status" }
+            Get-NomadInboxBackupStatus | ConvertTo-Json -Depth 60
+        }
+        "import" {
+            switch ($Subcommand) {
+                "status" { Read-NomadInboxImportStatus | ConvertTo-Json -Depth 40 }
+                "eml" {
+                    $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+                    Import-NomadInboxArchive -Format "eml" -Path (Require-NomadInboxOption $options "path") -Source (Get-NomadInboxOption $options "source" "eml-export") -MaxMessages ([int](Get-NomadInboxOption $options "max-messages" "0")) -IncludeBodies:($options.ContainsKey("include-bodies")) -DryRun:($options.ContainsKey("dry-run")) | ConvertTo-Json -Depth 50
+                }
+                "mbox" {
+                    $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+                    Import-NomadInboxArchive -Format "mbox" -Path (Require-NomadInboxOption $options "path") -Source (Get-NomadInboxOption $options "source" "gmail-takeout") -MaxMessages ([int](Get-NomadInboxOption $options "max-messages" "0")) -IncludeBodies:($options.ContainsKey("include-bodies")) -DryRun:($options.ContainsKey("dry-run")) | ConvertTo-Json -Depth 50
+                }
+                "jsonl" {
+                    $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+                    Import-NomadInboxArchive -Format "jsonl" -Path (Require-NomadInboxOption $options "path") -Source (Get-NomadInboxOption $options "source" "nomadinbox-export") -MaxMessages ([int](Get-NomadInboxOption $options "max-messages" "0")) -IncludeBodies:($options.ContainsKey("include-bodies")) -DryRun:($options.ContainsKey("dry-run")) | ConvertTo-Json -Depth 50
+                }
+                "pst" { throw "PST import is planned but not implemented in this bootstrap. Use eml, mbox, or jsonl now." }
+                "msg" { throw "MSG import is planned but not implemented in this bootstrap. Use eml, mbox, or jsonl now." }
+                default { throw "Unsupported import subcommand. Use: import status|eml|mbox|jsonl" }
             }
         }
         "sync" {

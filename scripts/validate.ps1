@@ -22,10 +22,12 @@ $required = @(
     "docs\c4\03-dynamic-flows.md",
     "docs\adrs\0001-create-fresh-nomadinbox-repository.md",
     "docs\adrs\0004-optional-background-sync-and-tray.md",
+    "docs\adrs\0005-read-only-archive-import-for-context.md",
     "docs\service-catalog\service-catalog.yaml",
     "docs\processes\process-catalog.md",
     "docs\runbooks\local-bootstrap.md",
     "docs\runbooks\background-sync-and-tray.md",
+    "docs\runbooks\archive-import.md",
     "docs\slo\nomadinbox-slo.md",
     "docs\governance\ARCHITECTURE_UPDATE_PROCESS.md",
     "docs\governance\SESSION_CHANGELOG.md",
@@ -49,6 +51,9 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         $_ -match '^target/' -or
         $_ -match 'token-cache' -or
         $_ -match 'client_secret' -or
+        $_ -match '\.(mbox|eml|pst|msg)$' -or
+        $_ -match '^mail-exports/' -or
+        $_ -match '^import-staging/' -or
         $_ -match '^config/nomad-inbox\.ps1$' -or
         $_ -match '^config/accounts\.json$'
     })

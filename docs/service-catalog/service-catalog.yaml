@@ -42,6 +42,36 @@ services:
       - stop-background-sync
       - show-sync-status
       - open-account-settings
+  - name: archive-importer
+    type: local-importer
+    status: bootstrapped
+    criticality: medium
+    interfaces:
+      - powershell
+      - data/archive-messages.jsonl
+      - data/archive-index.jsonl
+      - data/import-status.json
+    responsibilities:
+      - parse-eml
+      - parse-mbox
+      - parse-message-jsonl
+      - preserve-provenance
+      - mark-imported-messages-read-only
+    notes:
+      - Imported archive mail is context only.
+      - PST and MSG import are planned, not bootstrapped.
+  - name: backup-status-prompter
+    type: local-status
+    status: bootstrapped
+    criticality: medium
+    interfaces:
+      - powershell
+      - data/messages.jsonl
+      - data/archive-messages.jsonl
+    responsibilities:
+      - report-live-sync-counts
+      - report-archive-import-counts
+      - guide-users-to-sync-or-import
   - name: gmail-api-provider
     type: provider-adapter
     status: planned

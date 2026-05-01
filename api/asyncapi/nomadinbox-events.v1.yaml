@@ -44,3 +44,38 @@ channels:
             updatedAt:
               type: string
               format: date-time
+  data/archive-messages.jsonl:
+    subscribe:
+      summary: Read-only normalized messages imported from mail exports
+  data/archive-index.jsonl:
+    subscribe:
+      summary: Disposable searchable projection for imported archive mail
+  data/import-status.json:
+    subscribe:
+      summary: Latest archive import status and warning counts
+      message:
+        name: ImportStatus
+        payload:
+          type: object
+          properties:
+            service:
+              type: string
+            status:
+              type: string
+            lastImportAt:
+              type: string
+              format: date-time
+            lastBatchId:
+              type: string
+            lastSource:
+              type: string
+            lastFormat:
+              type: string
+            importedMessages:
+              type: integer
+            skippedMessages:
+              type: integer
+            warnings:
+              type: array
+              items:
+                type: string

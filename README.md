@@ -67,6 +67,8 @@ Then fill in provider-specific values in the ignored local config file.
 .\scripts\nomad-inbox.ps1 providers list
 .\scripts\nomad-inbox.ps1 accounts init
 .\scripts\nomad-inbox.ps1 accounts list
+.\scripts\nomad-inbox.ps1 backup status
+.\scripts\nomad-inbox.ps1 import status
 .\scripts\nomad-inbox.ps1 sync once
 .\scripts\nomad-inbox.ps1 service start
 .\scripts\nomad-inbox.ps1 service status
@@ -78,6 +80,23 @@ Then fill in provider-specific values in the ignored local config file.
 ```
 
 Provider commands are intentionally contract-first in this bootstrap. Implementations should plug into the provider adapter interface without changing the agent-facing message/action schema.
+
+## Archive Ingestion
+
+Live sync is the primary path for current mail and safe actions. Users can also import historical mail exports to enrich search and context:
+
+```powershell
+.\scripts\nomad-inbox.ps1 import eml --path .\mail-export --source outlook-export
+.\scripts\nomad-inbox.ps1 import mbox --path .\takeout\Mail.mbox --source gmail-takeout
+.\scripts\nomad-inbox.ps1 import jsonl --path .\messages.jsonl --source nomadinbox-export
+.\scripts\nomad-inbox.ps1 backup status
+```
+
+Imported archive messages are read-only by default. They set `actionable=false`, keep source provenance, and do not expose reply, move, delete, mark-read, or send actions unless a future live-provider link is established.
+
+By default, archive import stores metadata, snippets, headers, and a local searchable projection. Add `--include-bodies` only when the user explicitly wants full archive body storage.
+
+`backup status` returns interactive user prompts such as how many live synced messages and archive imported messages are available, when the last sync/import ran, and how the user can add more context from email exports.
 
 ## Optional Background Sync
 
@@ -111,11 +130,14 @@ The following are ignored by git:
 - `data/`
 - `runtime/`
 - `target/`
+- `mail-exports/`
+- `import-staging/`
 - `config/nomad-inbox.ps1`
 - `config/accounts.json`
 - OAuth client secrets
 - token caches
 - JSONL message/action logs
+- `.mbox`, `.eml`, `.pst`, and `.msg` mail export files
 
 ## Validation
 
