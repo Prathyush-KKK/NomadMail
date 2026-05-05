@@ -10,7 +10,7 @@ flowchart LR
     desktop["Outlook Desktop"]
 
     user -->|"Prompts and approvals"| agent
-    agent -->|"CLI JSON / future MCP"| nomad
+    agent -->|"MCP tools / local HTTP / CLI JSON"| nomad
     nomad -->|"Gmail REST API"| gmail
     nomad -->|"Graph Mail API"| graph
     nomad -->|"COM automation"| desktop
@@ -24,4 +24,3 @@ flowchart LR
 ## Scope
 
 NomadInbox provides a safe mailbox operations layer for agents. It does not host email and does not replace provider security/authentication.
-

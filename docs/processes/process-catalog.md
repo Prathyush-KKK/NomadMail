@@ -9,6 +9,8 @@ NomadInbox processes are documented explicitly so provider behavior, safety rule
 | Bootstrap setup | `setup` command | Data directory config | Runtime folders and empty JSONL files | `data/` | README, local bootstrap runbook |
 | Health check | `doctor` command | Repo files, config, provider status | JSON health result | None unless provider checks cache | Runbooks, SLOs |
 | Provider discovery | `providers list` | Provider registry | Provider capability JSON | None | Service catalog, C4 container diagram |
+| Agent tool discovery | MCP `tools/list`, `node service/nomadmail-service.mjs tools` | NomadMail tool registry | MCP tool schemas | None | README, service catalog, OpenAPI |
+| Agent callable service | `nomadmail-mcp.ps1`, `nomadmail-http.ps1` | MCP/HTTP requests | Agent-readable JSON responses | Reads local stores and may call CLI | Agent service runbook, C4, OpenAPI |
 | Config inspection | `config status` | Local env/config | Redacted config status | None | Config template, runbooks |
 | Account sync configuration | `accounts init`, `accounts list` | `config/accounts.example.json`, local `config/accounts.json` | Redacted account status | Local ignored config | README, config template, runbooks |
 | Schema discovery | `schemas list` | Schema files | Schema location JSON | None | Schemas, OpenAPI/AsyncAPI |
@@ -31,9 +33,9 @@ NomadInbox processes are documented explicitly so provider behavior, safety rule
 
 | Provider | Sync | Search | Full Get | Attachments | Draft | Send | State Mutation | Notes |
 |---|---|---|---|---|---|---|---|---|
-| Gmail API | Planned | Planned | Planned | Planned | Scope dependent | Confirmed, scope dependent | Scope dependent | Gmail/Workspace where IMAP/POP is disabled |
-| Outlook Graph | Planned | Planned | Planned | Planned | Planned | Confirmed | Planned | Outlook web/cloud mailbox via Graph |
-| Outlook Desktop | Planned | Planned | Planned | Planned | Planned | Confirmed | Planned | Local Outlook profile via Windows automation |
+| Gmail API | Bootstrapped | Local store | Local store | Planned | Scope dependent | Confirmed, scope dependent | Scope dependent | Uses bearer token env or gcloud access token |
+| Outlook Graph | Bootstrapped | Local store | Local store | Planned | Planned | Confirmed | Planned | Uses bearer token env or Azure CLI Graph token |
+| Outlook Desktop | Bootstrapped | Local store | Local store | Planned | Planned | Confirmed | Planned | Uses local Outlook COM in signed-in Windows session |
 
 ## Required Documentation Updates By Change Type
 

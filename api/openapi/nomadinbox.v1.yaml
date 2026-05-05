@@ -1,26 +1,40 @@
 openapi: 3.0.3
 info:
-  title: NomadInbox Local API
+  title: NomadMail Local API
   version: 0.1.0
-  description: Future local HTTP wrapper over NomadInbox provider operations.
+  description: Local HTTP wrapper over NomadInbox provider operations for non-MCP agents.
 servers:
   - url: http://127.0.0.1:8791
     description: Local-only API
 paths:
+  /agent-guide:
+    get:
+      operationId: nomadmailGetAgentGuide
+      summary: Show guidance for agents that parse email backups and sync target repository indexes
+      responses:
+        "200":
+          description: Agent guidance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentGuide"
   /health:
     get:
+      operationId: nomadmailHealthCheck
       summary: Check local service health
       responses:
         "200":
           description: Healthy
   /providers:
     get:
+      operationId: nomadmailListProviders
       summary: List provider configuration and capabilities
       responses:
         "200":
           description: Provider list
   /accounts:
     get:
+      operationId: nomadmailListAccounts
       summary: List configured accounts and background sync settings
       responses:
         "200":
@@ -40,13 +54,24 @@ paths:
                       $ref: "#/components/schemas/Account"
   /messages/sync:
     post:
+      operationId: nomadmailSyncMessages
       summary: Sync provider messages into local store
       responses:
         "200":
           description: Sync result
   /sync/once:
     post:
+      operationId: nomadmailSyncOnce
       summary: Run one sync cycle for enabled accounts
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accountId:
+                  type: string
       responses:
         "200":
           description: Sync cycle result
@@ -56,6 +81,7 @@ paths:
                 $ref: "#/components/schemas/SyncResult"
   /backup/status:
     get:
+      operationId: nomadmailGetBackupStatus
       summary: Show live sync and archive import backup depth with user prompts
       responses:
         "200":
@@ -66,12 +92,14 @@ paths:
                 $ref: "#/components/schemas/BackupStatus"
   /import/status:
     get:
+      operationId: nomadmailGetImportStatus
       summary: Show latest archive import status
       responses:
         "200":
           description: Latest import status
   /import/{format}:
     post:
+      operationId: nomadmailImportArchive
       summary: Import read-only mail export context
       parameters:
         - name: format
@@ -103,6 +131,7 @@ paths:
           description: Import result
   /service/status:
     get:
+      operationId: nomadmailGetServiceStatus
       summary: Show optional background sync worker status
       responses:
         "200":
@@ -113,18 +142,31 @@ paths:
                 $ref: "#/components/schemas/ServiceStatus"
   /service/start:
     post:
+      operationId: nomadmailStartService
       summary: Start optional user-session background sync
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                intervalSeconds:
+                  type: integer
+                  minimum: 30
       responses:
         "200":
           description: Worker started or already running
   /service/stop:
     post:
+      operationId: nomadmailStopService
       summary: Stop optional user-session background sync
       responses:
         "200":
           description: Worker stopped or already stopped
   /messages:
     get:
+      operationId: nomadmailSearchMessages
       summary: Search local messages
       parameters:
         - name: query
@@ -132,12 +174,79 @@ paths:
           schema: { type: string }
         - name: limit
           in: query
-          schema: { type: integer, default: 10 }
+          schema: { type: integer, default: 10, minimum: 1, maximum: 100 }
+        - name: includeLive
+          in: query
+          schema: { type: boolean, default: true }
+        - name: includeArchive
+          in: query
+          schema: { type: boolean, default: true }
+        - name: provider
+          in: query
+          schema: { type: string }
+        - name: folder
+          in: query
+          schema: { type: string }
       responses:
         "200":
           description: Message results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageSearchResult"
+  /messages/{id}:
+    get:
+      operationId: nomadmailGetMessage
+      summary: Get one locally stored message
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Message lookup result
 components:
   schemas:
+    AgentGuide:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        purpose:
+          type: string
+        storageBoundary:
+          type: object
+          properties:
+            defaultDataDir:
+              type: string
+            activeDataDir:
+              type: string
+            rule:
+              type: string
+            targetRepoRule:
+              type: string
+        safeWorkflow:
+          type: array
+          items:
+            type: string
+        importFormats:
+          type: object
+        liveSyncGuidance:
+          type: array
+          items:
+            type: string
+        targetIndexExamples:
+          type: array
+          items:
+            type: object
+        safetyRules:
+          type: array
+          items:
+            type: string
     Account:
       type: object
       properties:
@@ -220,3 +329,67 @@ components:
           type: array
           items:
             type: string
+    MessageSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        sourceType:
+          type: string
+        providerMessageId:
+          type: string
+          nullable: true
+        conversationId:
+          type: string
+          nullable: true
+        folder:
+          type: string
+          nullable: true
+        subject:
+          type: string
+        from:
+          type: object
+          nullable: true
+        to:
+          type: array
+          items:
+            type: object
+        receivedAt:
+          type: string
+          nullable: true
+        snippet:
+          type: string
+          nullable: true
+        unread:
+          type: boolean
+        flagged:
+          type: boolean
+        actionable:
+          type: boolean
+        capabilities:
+          type: array
+          items:
+            type: string
+    MessageSearchResult:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        query:
+          type: string
+        limit:
+          type: integer
+        includeLive:
+          type: boolean
+        includeArchive:
+          type: boolean
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageSummary"

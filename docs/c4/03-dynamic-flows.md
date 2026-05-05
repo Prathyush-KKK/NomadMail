@@ -1,5 +1,31 @@
 # C4 Dynamic Flows
 
+## Agent Tool Flow
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant MCP as NomadMail MCP
+    participant HTTP as NomadMail HTTP
+    participant CLI
+    participant Store
+
+    Agent->>MCP: tools/call nomadmail_search_messages
+    MCP->>Store: read messages/archive JSONL
+    Store-->>MCP: normalized results
+    MCP-->>Agent: MCP content JSON
+
+    Agent->>HTTP: GET /messages?query=invoice
+    HTTP->>Store: read messages/archive JSONL
+    Store-->>HTTP: normalized results
+    HTTP-->>Agent: JSON response
+
+    Agent->>MCP: tools/call nomadmail_sync_once
+    MCP->>CLI: nomad-inbox.ps1 sync once
+    CLI-->>MCP: sync summary JSON
+    MCP-->>Agent: MCP content JSON
+```
+
 ## Sync Flow
 
 ```mermaid

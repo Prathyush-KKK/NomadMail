@@ -10,7 +10,7 @@ NomadInbox is independent from OSM, WebLogic, JMS, and any earlier local test ha
 Agent / User Prompt
   |
   v
-NomadInbox CLI / future local API
+NomadMail MCP Server / NomadMail Local HTTP / NomadInbox CLI
   |
   v
 Command Layer
@@ -31,6 +31,13 @@ Provider Adapters
   +-- Outlook Graph
   +-- Outlook Desktop
 ```
+
+NomadMail is the callable service facade over the NomadInbox core. It exposes
+the same local contracts to different agents through:
+
+- MCP over stdio via `scripts/nomadmail-mcp.ps1`.
+- Local HTTP on `127.0.0.1:8791` via `scripts/nomadmail-http.ps1`.
+- Existing direct PowerShell CLI calls via `scripts/nomad-inbox.ps1`.
 
 ## Runtime Data
 
@@ -54,6 +61,27 @@ Per-account background sync settings are local and ignored by git:
 - `config/accounts.json`
 
 The tracked `config/accounts.example.json` shows the shape users can copy and customize.
+
+## Agent Service Contract
+
+NomadMail currently exposes these MCP tools:
+
+- `nomadmail_health_check`
+- `nomadmail_list_providers`
+- `nomadmail_list_accounts`
+- `nomadmail_sync_once`
+- `nomadmail_search_messages`
+- `nomadmail_get_message`
+- `nomadmail_get_backup_status`
+- `nomadmail_get_service_status`
+- `nomadmail_start_service`
+- `nomadmail_stop_service`
+- `nomadmail_import_archive`
+
+The service runtime is `service/nomadmail-service.mjs`. It uses Node.js with no
+external package dependency and calls the existing PowerShell CLI for command
+operations. Local message search reads the ignored JSONL stores directly so MCP
+and HTTP clients get a fast provider-neutral search surface.
 
 ## Provider Contract
 
@@ -80,6 +108,16 @@ Providers should expose these capabilities where supported:
 - `move`
 - `archive`
 - `trash`
+
+Bootstrap provider sync is implemented for:
+
+- Gmail API using `NOMADINBOX_GMAIL_ACCESS_TOKEN` or `gcloud auth print-access-token`.
+- Outlook Graph using `NOMADINBOX_GRAPH_ACCESS_TOKEN` or Azure CLI Graph token acquisition.
+- Outlook Desktop using Windows Outlook COM in the signed-in desktop session.
+
+These bootstrap adapters store normalized metadata and snippets in
+`data/messages.jsonl`. Draft, send, attachment hydration, and state mutation
+remain governed by the safety gate before service exposure.
 
 ## Archive Import Contract
 
@@ -144,10 +182,10 @@ The tray controller is also optional:
 ```text
 nomad-inbox.ps1 tray start
   -> starts scripts/nomad-inbox-tray.ps1
-  -> exposes start/stop/status/open-config/open-runtime-folder
+  -> exposes agent-connect/auto-sync-toggle/status/open-config/open-runtime-folder
 ```
 
-It is a small Windows Forms NotifyIcon process, not a full desktop app.
+It is a small Windows Forms NotifyIcon process, not a full desktop app. The tray does not discover account credentials by itself. If no enabled account exists, it routes the user to an agent-guided connection prompt that asks before checking Gmail token state, Graph or Azure CLI token state, or the local Outlook Desktop profile. Once an account is enabled, the auto-sync toggle starts or stops the same user-session worker used by `service start`.
 
 ## Storage Evolution
 
@@ -161,6 +199,5 @@ Next:
 - SQLite for durable local store.
 - SQLite FTS for search.
 - Encrypted local vault for secrets and tokens.
-- MCP server for agent-native tool calls.
 - Durable scheduler / Windows Task Scheduler integration.
 - Optional Windows Service wrapper for non-desktop API providers.

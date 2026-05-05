@@ -9,6 +9,7 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 - A local operator using Codex or another coding agent.
 - A developer who wants agent-readable email data without exposing raw provider internals.
 - A user whose mailbox provider may disable IMAP/POP and require API/native access.
+- Multiple local agents that need a shared callable mailbox service instead of ad hoc scripts.
 
 ## Core Jobs
 
@@ -21,6 +22,7 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 7. Send only after explicit user confirmation.
 8. Audit every mutating action.
 9. Remind users how much live and archived mail context is backed up.
+10. Expose mailbox status, sync, search, get, and import operations through MCP and local HTTP.
 
 ## Providers
 
@@ -36,10 +38,12 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 - Optional user-session background sync worker.
 - Optional Windows system-tray controller.
 - Provider adapter contract.
+- Bootstrap sync adapters for Gmail API, Outlook Graph, and Outlook Desktop.
 - JSON message/action schemas.
 - Local JSONL runtime store.
 - Read-only archive import for `.eml`, `.mbox`, and existing message JSONL.
 - Backup/context status prompts.
+- NomadMail MCP and local HTTP callable service.
 - Read-only default posture.
 - Config examples without secrets.
 - C4, ADR, runbook, service catalog, API, and SLO documentation.
@@ -62,5 +66,6 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 - Users can configure per-account sync settings through ignored local config.
 - Users can import historical mail exports without making those messages directly actionable.
 - Users can see backed-up message counts and guidance through `backup status`.
+- Agents can discover and call NomadMail tools through MCP or loopback HTTP.
 - Provider implementations can be added without changing the normalized data contracts.
 - Git ignores runtime data and secrets by default.

@@ -18,6 +18,9 @@ try {
     $accounts = & $cli accounts list | ConvertFrom-Json
     if (@($accounts.accounts).Count -lt 3) { throw "expected account templates" }
 
+    $singleSync = & $cli sync once --account-id personal-gmail | ConvertFrom-Json
+    if ($singleSync.status -ne "ok" -or $singleSync.accountCount -ne 1) { throw "account-scoped sync failed" }
+
     $status = & $cli service status | ConvertFrom-Json
     if ($status.status -ne "ok") { throw "service status failed" }
 
@@ -46,9 +49,19 @@ This sample validates archive ingestion without using real mailbox exports.
         throw "archive import failed"
     }
 
+    $agentService = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") self-test | ConvertFrom-Json
+    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 9 -or $agentService.agentGuideStatus -ne "ok") {
+        throw "agent service self-test failed"
+    }
+
+    $agentGuide = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-guide | ConvertFrom-Json
+    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule) {
+        throw "agent guide failed"
+    }
+
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "service status", "backup status", "import status", "sample message", "import eml")
+        tests = @("doctor", "providers list", "accounts list", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "agent service self-test", "agent guide")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {

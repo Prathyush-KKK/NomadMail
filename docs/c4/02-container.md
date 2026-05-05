@@ -4,7 +4,7 @@
 flowchart TB
     agent["Agent"]
     cli["PowerShell CLI"]
-    api["Future Local API / MCP"]
+    api["NomadMail MCP / HTTP"]
     core["NomadInbox Core"]
     worker["Optional Sync Worker"]
     tray["System Tray Controller"]
@@ -18,7 +18,7 @@ flowchart TB
     desktop["Outlook Desktop Adapter"]
 
     agent --> cli
-    agent -. "future" .-> api
+    agent --> api
     cli --> core
     api --> core
     tray --> cli
@@ -45,7 +45,7 @@ flowchart TB
 | Container | Responsibility |
 |---|---|
 | CLI | Human/agent command surface |
-| Future API/MCP | Agent-native integration target |
+| NomadMail MCP / HTTP | Agent-native stdio tools and local REST-style calls |
 | Core | Provider registry, safety rules, schema consistency |
 | Optional sync worker | User-session background polling for enabled accounts |
 | System tray controller | Small local UI for start/stop/status/settings |

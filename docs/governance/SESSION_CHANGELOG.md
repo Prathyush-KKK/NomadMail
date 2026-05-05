@@ -1,5 +1,23 @@
-﻿# Session Architecture Changelog
+# Session Architecture Changelog
 
+## 2026-05-05 - Agent Email Sync Guidance
+
+Summary:
+
+- Added agent-facing NomadMail guidance for parsing email backups, redirecting storage to target-repository staging, syncing live mail, and handing normalized JSONL to target indexers.
+
+Session note:
+
+- docs/governance/session-updates/20260505-181544-agent-email-sync-guidance.md
+## 2026-05-05 - NomadMail Agent Service
+
+Summary:
+
+- Added the NomadMail MCP and local HTTP callable service, launch scripts, account-scoped sync support, direct local message search, bootstrap Gmail/Graph/Desktop sync adapters, and matching architecture docs.
+
+Session note:
+
+- docs/governance/session-updates/20260505-021907-nomadmail-agent-service.md
 ## 2026-05-01 - Read Only Archive Import
 
 Summary:
@@ -41,7 +59,3 @@ Affected areas:
 - Local-first runtime model.
 - Provider adapter architecture.
 - Documentation update process.
-
-
-
-

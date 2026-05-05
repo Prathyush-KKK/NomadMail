@@ -19,6 +19,7 @@ These are local operational targets, not external service-level agreements.
 | Account sync coverage | Enabled accounts attempted / enabled accounts in each sync cycle |
 | Archive import success | Successfully parsed archive messages / archive messages attempted |
 | Backup status freshness | `backup status` reflects latest sync and import status files |
+| Agent service health | MCP self-test and HTTP `/health` return structured JSON |
 
 ## Bootstrap Targets
 
@@ -33,6 +34,7 @@ These are local operational targets, not external service-level agreements.
 | Background freshness | Status file updated within 2x the configured interval while worker is running |
 | Archive dry-run safety | Dry-run import writes no archive message records |
 | Imported mail safety | 100% of archive imported messages set `actionable=false` |
+| Agent tool discovery | MCP `tools/list` and `node service/nomadmail-service.mjs tools` expose valid tool schemas |
 
 ## Operating Targets
 
@@ -44,3 +46,4 @@ These are local operational targets, not external service-level agreements.
 | Audit stream | 100% of sync attempts create an action record in bootstrap mode | Real provider adapters should preserve this behavior |
 | Archive import | `eml`, `mbox`, and `jsonl` imports return counts and provenance | PST/MSG remain planned |
 | User prompts | `backup status` always tells users current backup depth and next useful action | Prompts are derived from local stats |
+| Agent callable mode | MCP and HTTP wrappers call the same local contracts as the CLI | HTTP binds to loopback by default |

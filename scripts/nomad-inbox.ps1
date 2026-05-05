@@ -41,7 +41,9 @@ Archive context import:
 
 Background sync:
   .\scripts\nomad-inbox.ps1 sync once
+  .\scripts\nomad-inbox.ps1 sync once --account-id personal-gmail
   .\scripts\nomad-inbox.ps1 service start
+  .\scripts\nomad-inbox.ps1 service start --interval-seconds 300
   .\scripts\nomad-inbox.ps1 service status
   .\scripts\nomad-inbox.ps1 service stop
   .\scripts\nomad-inbox.ps1 tray start
@@ -104,11 +106,16 @@ try {
         }
         "sync" {
             if ($Subcommand -ne "once") { throw "Unsupported sync subcommand. Use: sync once" }
-            Invoke-NomadInboxSyncOnce | ConvertTo-Json -Depth 40
+            $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+            $accountId = Get-NomadInboxOption $options "account-id" ""
+            Invoke-NomadInboxSyncOnce -AccountId $accountId | ConvertTo-Json -Depth 40
         }
         "service" {
             switch ($Subcommand) {
-                "start" { Start-NomadInboxService | ConvertTo-Json -Depth 50 }
+                "start" {
+                    $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+                    Start-NomadInboxService -IntervalSeconds ([int](Get-NomadInboxOption $options "interval-seconds" "0")) | ConvertTo-Json -Depth 50
+                }
                 "stop" { Stop-NomadInboxService | ConvertTo-Json -Depth 30 }
                 "restart" {
                     Stop-NomadInboxService | Out-Null

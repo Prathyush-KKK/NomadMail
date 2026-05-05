@@ -1,131 +1,82 @@
 # NomadInbox
 
-NomadInbox is a local-first mailbox visibility and action service for coding agents.
+NomadInbox is a local-first mailbox visibility and action service for AI agents.
 
-It gives agents a safe, provider-neutral way to read, search, inspect, draft, and act on email across:
+The callable service surface is named NomadMail. NomadMail wraps the NomadInbox core so different agents can use the same Gmail, Outlook Graph, Outlook Desktop, sync, search, import, and status contracts through MCP or local HTTP.
+
+This repository starts with no copied mailbox data, OAuth token caches, local credential files, or user-specific message exports. Runtime data stays local and is ignored by git.
+
+## What It Does
+
+NomadInbox gives agents a provider-neutral way to read, search, inspect, and safely prepare actions for email across:
 
 - Outlook Desktop
-- Outlook / Microsoft 365 via Microsoft Graph
-- Gmail / Google Workspace via Gmail API
-
-This repository is intentionally fresh. It does not include copied mailbox data, OAuth token caches, local credential files, or user-specific message exports.
-
-## Product Goal
-
-Expose inbox data as agent-readable JSON while keeping mailbox mutation controlled, auditable, and explicit.
+- Outlook / Microsoft 365 through Microsoft Graph
+- Gmail / Google Workspace through Gmail API
+- Local email exports such as EML, MBOX, and compatible JSONL
 
 Core principles:
 
-- Read operations are allowed after provider authentication.
-- Draft creation is separate from send.
-- Sending always requires explicit confirmation.
+- Read operations happen only after provider authentication or approved local import.
+- Archive imports are read-only context by default.
+- Drafting is separate from sending.
+- Sending and mailbox mutations require explicit confirmation.
 - Provider-specific message IDs are preserved.
-- Runtime data stays local and ignored by git.
-- Data contracts stay stable across providers.
+- Local runtime data is not pushed to GitHub.
 
-## Project Location
+## Easy Setup With An AI Agent Workspace
+
+Open this repository in your AI agent workspace:
 
 ```text
 C:\Users\prat\Documents\osm\NomadInbox
 ```
 
-## Quick Start
+Then ask the agent:
 
-```powershell
-cd C:\Users\prat\Documents\osm\NomadInbox
-.\scripts\nomad-inbox.ps1 setup
-.\scripts\nomad-inbox.ps1 doctor
-.\scripts\nomad-inbox.ps1 providers list
+```text
+I want to try NomadInbox/NomadMail.
+
+First verify setup, validation, provider status, account status, and git ignore boundaries.
+Do not connect accounts, scan exports, read mailbox data, or start auto sync until I approve.
+
+Show me the safe next choices:
+- Gmail API
+- Outlook Graph
+- Outlook Desktop
+- local email export import
+- tray app with auto sync
 ```
 
-Copy the local config template before connecting real providers:
+The agent should:
 
-```powershell
-Copy-Item .\config\nomad-inbox.example.ps1 .\config\nomad-inbox.ps1
+- verify that runtime data and secrets are ignored by git
+- check whether Gmail, Graph, or Outlook Desktop are available
+- ask before discovering tokens, profiles, exports, or account data
+- keep broad mailbox access, body storage, attachments, and auto sync as explicit choices
+- use `NOMADINBOX_DATA_DIR` when you want data staged somewhere other than NomadInbox's default local store
+
+## Quick Trial Flow
+
+Use the agent workspace to run a safe status check first. After that, choose one path:
+
+- **Outlook Desktop** if you already have Outlook open and signed in on Windows.
+- **Outlook Graph** if you want Microsoft 365 mail through Graph.
+- **Gmail API** if you want Gmail or Google Workspace mail.
+- **Local export import** if you already have EML, MBOX, or NomadMail JSONL backups.
+- **Tray auto sync** if you want a system-tray toggle for background sync after accounts are connected.
+
+The tray app can guide users back to the agent when no account is connected, and can start or stop the background worker once accounts are enabled.
+
+## Storage And Privacy
+
+By default, runtime data is stored under:
+
+```text
+C:\Users\prat\Documents\osm\NomadInbox\data
 ```
 
-Then fill in provider-specific values in the ignored local config file.
-
-## Repository Map
-
-| Path | Purpose |
-|---|---|
-| `scripts/` | CLI entrypoints and validation scripts |
-| `src/NomadInbox/` | Core PowerShell module and provider contract |
-| `providers/` | Provider-specific adapters and setup notes |
-| `schemas/` | Agent-facing JSON contracts |
-| `docs/` | Product, architecture, ADRs, runbooks, service catalog, SLOs |
-| `api/` | Future OpenAPI and AsyncAPI contracts |
-| `config/` | Safe example config only |
-| `tests/` | Smoke/validation checks |
-
-## Available Commands
-
-```powershell
-.\scripts\nomad-inbox.ps1 setup
-.\scripts\nomad-inbox.ps1 doctor
-.\scripts\nomad-inbox.ps1 providers list
-.\scripts\nomad-inbox.ps1 accounts init
-.\scripts\nomad-inbox.ps1 accounts list
-.\scripts\nomad-inbox.ps1 backup status
-.\scripts\nomad-inbox.ps1 import status
-.\scripts\nomad-inbox.ps1 sync once
-.\scripts\nomad-inbox.ps1 service start
-.\scripts\nomad-inbox.ps1 service status
-.\scripts\nomad-inbox.ps1 service stop
-.\scripts\nomad-inbox.ps1 tray start
-.\scripts\nomad-inbox.ps1 config status
-.\scripts\nomad-inbox.ps1 schemas list
-.\scripts\nomad-inbox.ps1 sample message
-```
-
-Provider commands are intentionally contract-first in this bootstrap. Implementations should plug into the provider adapter interface without changing the agent-facing message/action schema.
-
-## Archive Ingestion
-
-Live sync is the primary path for current mail and safe actions. Users can also import historical mail exports to enrich search and context:
-
-```powershell
-.\scripts\nomad-inbox.ps1 import eml --path .\mail-export --source outlook-export
-.\scripts\nomad-inbox.ps1 import mbox --path .\takeout\Mail.mbox --source gmail-takeout
-.\scripts\nomad-inbox.ps1 import jsonl --path .\messages.jsonl --source nomadinbox-export
-.\scripts\nomad-inbox.ps1 backup status
-```
-
-Imported archive messages are read-only by default. They set `actionable=false`, keep source provenance, and do not expose reply, move, delete, mark-read, or send actions unless a future live-provider link is established.
-
-By default, archive import stores metadata, snippets, headers, and a local searchable projection. Add `--include-bodies` only when the user explicitly wants full archive body storage.
-
-`backup status` returns interactive user prompts such as how many live synced messages and archive imported messages are available, when the last sync/import ran, and how the user can add more context from email exports.
-
-## Optional Background Sync
-
-NomadInbox is request-driven by default. Users can also opt into background sync:
-
-```powershell
-.\scripts\nomad-inbox.ps1 accounts init
-notepad .\config\accounts.json
-.\scripts\nomad-inbox.ps1 service start
-.\scripts\nomad-inbox.ps1 service status
-```
-
-This means a user can query NomadInbox only when needed, or they can do this as well: enable a small local background worker that keeps selected accounts fresh on a schedule.
-
-`config\accounts.json` is ignored by git. Each account can be enabled or disabled independently and can define its own provider, folder, query, limit, and interval.
-
-The tray controller is optional:
-
-```powershell
-.\scripts\nomad-inbox.ps1 tray start
-```
-
-It adds a Windows system-tray icon for status, start/stop sync, opening account settings, and opening the runtime folder.
-
-## Safety
-
-NomadInbox starts with no connected mailbox. Runtime files are created only when you run setup or connect providers.
-
-The following are ignored by git:
+Ignored local files include:
 
 - `data/`
 - `runtime/`
@@ -139,20 +90,40 @@ The following are ignored by git:
 - JSONL message/action logs
 - `.mbox`, `.eml`, `.pst`, and `.msg` mail export files
 
-## Validation
+For another storage location, start the agent, CLI, tray, MCP server, or HTTP service with `NOMADINBOX_DATA_DIR` set to the target local data folder.
 
-```powershell
-.\scripts\validate.ps1
-```
+## Agent Callable Service
 
-The validation script checks required docs, schemas, scripts, and secret-ignore rules.
+NomadMail exposes NomadInbox to agents through:
 
-## Architecture Updates
+- MCP over stdio
+- local HTTP on `127.0.0.1`
+- the underlying PowerShell CLI
 
-When the architecture or project behavior changes during a session, update the affected artifacts and run:
+The service supports provider/account discovery, one-shot sync, local message search, message lookup, backup status, service status, background worker start/stop, agent guidance, and read-only archive import.
 
-```powershell
-.\scripts\session-closeout.ps1 -Title "Short change title" -Summary "What changed and why"
-```
+Agents should call `nomadmail_get_agent_guide` or HTTP `/agent-guide` before syncing mail or parsing email backups for another repository.
 
-This records a session update, appends the architecture changelog, and validates the required documentation pack.
+## Repository Map
+
+| Path | Purpose |
+|---|---|
+| `scripts/` | CLI entrypoints, tray launcher, MCP/HTTP launchers, validation scripts |
+| `src/NomadInbox/` | Core PowerShell module and provider sync contract |
+| `service/` | NomadMail MCP and HTTP service |
+| `providers/` | Provider-specific setup notes |
+| `schemas/` | Agent-facing JSON contracts |
+| `docs/` | Product, architecture, ADRs, runbooks, service catalog, SLOs |
+| `api/` | OpenAPI and AsyncAPI contracts |
+| `config/` | Safe example config only |
+| `tests/` | Smoke checks |
+
+## Safety
+
+NomadInbox is request-driven by default. Background sync starts only when the user enables accounts and starts the worker or tray auto-sync toggle.
+
+Imported archive mail is read-only context. Live provider actions such as reply, send, move, archive, trash, flag, mark-read, or attachment save must remain explicit action-time workflows.
+
+## Manual Setup
+
+For command-by-command setup, provider checks, imports, tray usage, MCP/HTTP launch, validation, and troubleshooting, use [Manual Setup](docs/runbooks/manual-setup.md).

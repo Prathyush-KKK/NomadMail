@@ -7,11 +7,14 @@ $required = @(
     "config\nomad-inbox.example.ps1",
     "config\accounts.example.json",
     "scripts\nomad-inbox.ps1",
+    "scripts\nomadmail-http.ps1",
+    "scripts\nomadmail-mcp.ps1",
     "scripts\nomad-inbox-worker.ps1",
     "scripts\nomad-inbox-tray.ps1",
     "scripts\new-architecture-change.ps1",
     "scripts\session-closeout.ps1",
     "src\NomadInbox\NomadInbox.psm1",
+    "service\nomadmail-service.mjs",
     "schemas\message.v1.json",
     "schemas\action.v1.json",
     "docs\ARCHITECTURE_INDEX.md",
@@ -23,11 +26,13 @@ $required = @(
     "docs\adrs\0001-create-fresh-nomadinbox-repository.md",
     "docs\adrs\0004-optional-background-sync-and-tray.md",
     "docs\adrs\0005-read-only-archive-import-for-context.md",
+    "docs\adrs\0006-expose-nomadmail-agent-service.md",
     "docs\service-catalog\service-catalog.yaml",
     "docs\processes\process-catalog.md",
     "docs\runbooks\local-bootstrap.md",
     "docs\runbooks\background-sync-and-tray.md",
     "docs\runbooks\archive-import.md",
+    "docs\runbooks\agent-service.md",
     "docs\slo\nomadinbox-slo.md",
     "docs\governance\ARCHITECTURE_UPDATE_PROCESS.md",
     "docs\governance\SESSION_CHANGELOG.md",
@@ -59,11 +64,32 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     })
 }
 
+$parseErrors = @()
+$trayPath = Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"
+$tokens = $null
+$errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tokens, [ref]$errors) | Out-Null
+if ($errors) {
+    $parseErrors += @($errors | ForEach-Object { $_.Message })
+}
+
+$trayText = Get-Content -LiteralPath $trayPath -Raw
+$requiredTrayMarkers = @(
+    "Turn on auto sync",
+    "Turn off auto sync",
+    "Connect accounts with agent",
+    "Get-NomadInboxAgentPrompt",
+    "Open your agent and perform a request-driven NomadMail sync"
+)
+$missingTrayMarkers = @($requiredTrayMarkers | Where-Object { $trayText -notlike "*$_*" })
+
 $result = [pscustomobject]@{
-    status = if ($missing.Count -eq 0 -and $forbiddenTracked.Count -eq 0) { "ok" } else { "failed" }
+    status = if ($missing.Count -eq 0 -and $forbiddenTracked.Count -eq 0 -and $parseErrors.Count -eq 0 -and $missingTrayMarkers.Count -eq 0) { "ok" } else { "failed" }
     project = $repoRoot
     missing = $missing
     forbiddenTracked = $forbiddenTracked
+    parseErrors = $parseErrors
+    missingTrayMarkers = $missingTrayMarkers
 }
 
 $result | ConvertTo-Json -Depth 10

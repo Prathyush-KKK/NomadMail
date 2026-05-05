@@ -6,6 +6,31 @@ services:
     interfaces:
       - powershell
       - json-output
+  - name: nomadmail-mcp-server
+    type: local-agent-service
+    status: bootstrapped
+    criticality: high
+    interfaces:
+      - mcp-stdio
+      - powershell-launcher
+      - service/nomadmail-service.mjs
+    responsibilities:
+      - expose-agent-tools
+      - wrap-nomadinbox-cli
+      - search-local-message-store
+      - preserve-send-confirmation-boundary
+  - name: nomadmail-http-service
+    type: local-http-service
+    status: bootstrapped
+    criticality: high
+    interfaces:
+      - http-127.0.0.1
+      - openapi
+      - service/nomadmail-service.mjs
+    responsibilities:
+      - expose-local-rest-api
+      - support-non-mcp-agents
+      - wrap-nomadinbox-cli
   - name: nomadinbox-core
     type: local-core
     status: bootstrapped
@@ -74,17 +99,21 @@ services:
       - guide-users-to-sync-or-import
   - name: gmail-api-provider
     type: provider-adapter
-    status: planned
+    status: bootstrapped-sync
     auth:
       - google-oauth
       - workspace-domain-delegation
+      - bearer-token-env
+      - gcloud-access-token
   - name: outlook-graph-provider
     type: provider-adapter
-    status: planned
+    status: bootstrapped-sync
     auth:
       - microsoft-graph-oauth
+      - bearer-token-env
+      - azure-cli-access-token
   - name: outlook-desktop-provider
     type: provider-adapter
-    status: planned
+    status: bootstrapped-sync
     auth:
       - local-outlook-profile

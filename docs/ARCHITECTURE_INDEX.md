@@ -18,10 +18,11 @@ C:\Users\prat\Documents\osm\NomadInbox
 | Process catalog | `docs/processes/process-catalog.md` | End-to-end operational process inventory |
 | Runbooks | `docs/runbooks/` | Operating procedures and troubleshooting |
 | SLOs/SLIs | `docs/slo/nomadinbox-slo.md` | Local reliability targets and measurements |
-| OpenAPI | `api/openapi/nomadinbox.v1.yaml` | Future local HTTP contract |
+| OpenAPI | `api/openapi/nomadinbox.v1.yaml` | Local HTTP service contract |
 | AsyncAPI | `api/asyncapi/nomadinbox-events.v1.yaml` | Local JSONL/event contract |
 | Governance | `docs/governance/` | Required architecture update workflow |
 | Schemas | `schemas/` | Agent-readable message/action contracts |
+| NomadMail service | `service/nomadmail-service.mjs` | MCP and local HTTP callable agent runtime |
 
 ## Required Update Rule
 
@@ -38,4 +39,3 @@ Validation-only:
 ```powershell
 .\scripts\validate.ps1
 ```
-

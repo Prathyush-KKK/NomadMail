@@ -171,13 +171,15 @@ function Get-NomadInboxAccounts {
 }
 
 function Get-NomadInboxProviders {
+    $gmailConfigured = -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_CLIENT_SECRET_JSON) -or -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_ACCESS_TOKEN)
+    $graphConfigured = -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GRAPH_CLIENT_ID) -or -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GRAPH_ACCESS_TOKEN)
     $providers = @(
         [pscustomobject]@{
             id = "gmail-api"
             name = "Gmail API"
             runtime = "Google Gmail REST API"
             auth = "OAuth Desktop client or Workspace delegation"
-            status = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_CLIENT_SECRET_JSON)) { "unconfigured" } else { "configured" }
+            status = if ($gmailConfigured) { "configured" } else { "unconfigured" }
             defaultScopes = "gmail.readonly"
             capabilities = @("sync", "search", "get", "attachments", "draft", "send-confirmed", "mark-read", "star", "move")
         },
@@ -186,7 +188,7 @@ function Get-NomadInboxProviders {
             name = "Outlook Graph"
             runtime = "Microsoft Graph Mail API"
             auth = "Microsoft OAuth device-code or delegated OAuth"
-            status = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_GRAPH_CLIENT_ID)) { "unconfigured" } else { "configured" }
+            status = if ($graphConfigured) { "configured" } else { "unconfigured" }
             defaultScopes = "User.Read Mail.Read Mail.ReadWrite Mail.Send"
             capabilities = @("sync", "search", "get", "attachments", "draft", "send-confirmed", "mark-read", "flag", "move")
         },
@@ -214,7 +216,9 @@ function Get-NomadInboxConfigStatus {
         dataDirConfigured = -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_DATA_DIR)
         defaultProvider = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_DEFAULT_PROVIDER)) { "gmail-api" } else { $env:NOMADINBOX_DEFAULT_PROVIDER }
         gmailClientConfigured = -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_CLIENT_SECRET_JSON)
+        gmailAccessTokenConfigured = -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_ACCESS_TOKEN)
         graphClientConfigured = -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GRAPH_CLIENT_ID)
+        graphAccessTokenConfigured = -not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GRAPH_ACCESS_TOKEN)
         outlookDesktopProfile = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_OUTLOOK_DESKTOP_PROFILE)) { "default" } else { $env:NOMADINBOX_OUTLOOK_DESKTOP_PROFILE }
         localConfigExpected = Join-Path (Get-NomadInboxRoot) "config\nomad-inbox.ps1"
         localConfigExists = Test-Path -LiteralPath (Join-Path (Get-NomadInboxRoot) "config\nomad-inbox.ps1")
@@ -273,50 +277,359 @@ function Write-NomadInboxActionRecord {
     return $record
 }
 
+function New-NomadInboxSyncResult {
+    param(
+        $Account,
+        [string]$Status,
+        [string]$Reason,
+        [int]$Synced,
+        [datetime]$StartedAt
+    )
+    [pscustomobject]@{
+        accountId = $Account.id
+        displayName = $Account.displayName
+        provider = $Account.provider
+        status = $Status
+        reason = $Reason
+        synced = $Synced
+        startedAt = $StartedAt.ToUniversalTime().ToString("o")
+        finishedAt = (Get-Date).ToUniversalTime().ToString("o")
+    }
+}
+
+function New-NomadInboxLiveMessage {
+    param(
+        [string]$Provider,
+        [string]$AccountId,
+        [string]$ProviderMessageId,
+        [string]$ConversationId,
+        [string]$Folder,
+        [string]$Subject,
+        $From,
+        [array]$To,
+        [array]$Cc,
+        [string]$ReceivedAt,
+        [string]$SentAt,
+        [string]$Snippet,
+        [hashtable]$Headers,
+        [bool]$Unread,
+        [bool]$Flagged,
+        [string]$Importance,
+        [array]$Categories,
+        [array]$Attachments,
+        [array]$Capabilities
+    )
+    $id = "$Provider`:$AccountId`:" + (ConvertTo-NomadInboxHash $ProviderMessageId).Substring(0, 32)
+    [pscustomobject]@{
+        id = $id
+        provider = $Provider
+        providerMessageId = $ProviderMessageId
+        conversationId = $ConversationId
+        folder = $Folder
+        subject = if ([string]::IsNullOrWhiteSpace($Subject)) { "(no subject)" } else { $Subject }
+        from = $From
+        to = @($To)
+        cc = @($Cc)
+        receivedAt = if ([string]::IsNullOrWhiteSpace($ReceivedAt)) { (Get-Date).ToUniversalTime().ToString("o") } else { $ReceivedAt }
+        sentAt = if ([string]::IsNullOrWhiteSpace($SentAt)) { $null } else { $SentAt }
+        snippet = ConvertTo-NomadInboxSnippet $Snippet
+        bodyText = $null
+        bodyHtml = $null
+        headers = if ($Headers) { $Headers } else { @{} }
+        unread = $Unread
+        flagged = $Flagged
+        importance = $Importance
+        categories = @($Categories)
+        attachments = @($Attachments)
+        capabilities = @($Capabilities)
+        sourceType = "live-sync"
+        sourceProvider = $Provider
+        sourcePathHash = $null
+        importBatchId = $null
+        actionable = $true
+        importedAt = $null
+    }
+}
+
+function Write-NomadInboxLiveMessages {
+    param([array]$Records)
+    Initialize-NomadInbox | Out-Null
+    $path = Get-NomadInboxMessagesPath
+    $byId = [ordered]@{}
+    if (Test-Path -LiteralPath $path) {
+        foreach ($line in [System.IO.File]::ReadLines($path)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            try {
+                $existing = $line | ConvertFrom-Json
+                if ($existing.id) { $byId[[string]$existing.id] = $existing }
+            } catch {
+            }
+        }
+    }
+    foreach ($record in $Records) {
+        if ($record.id) { $byId[[string]$record.id] = $record }
+    }
+    $lines = @($byId.Values | ForEach-Object { $_ | ConvertTo-Json -Depth 50 -Compress })
+    $lines | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
+function Get-NomadInboxExternalCommandOutput {
+    param([string[]]$CommandNames, [string[]]$Arguments)
+    foreach ($name in $CommandNames) {
+        $command = Get-Command $name -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $command) { continue }
+        try {
+            $output = & $command.Source @Arguments 2>$null
+            $text = ($output | Out-String).Trim()
+            if (-not [string]::IsNullOrWhiteSpace($text)) { return $text }
+        } catch {
+        }
+    }
+    return ""
+}
+
+function Get-NomadInboxGmailAccessToken {
+    if (-not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_ACCESS_TOKEN)) {
+        return $env:NOMADINBOX_GMAIL_ACCESS_TOKEN
+    }
+    return Get-NomadInboxExternalCommandOutput -CommandNames @("gcloud", "gcloud.cmd", "gcloud.ps1") -Arguments @("auth", "print-access-token")
+}
+
+function Get-NomadInboxGraphAccessToken {
+    if (-not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GRAPH_ACCESS_TOKEN)) {
+        return $env:NOMADINBOX_GRAPH_ACCESS_TOKEN
+    }
+    $json = Get-NomadInboxExternalCommandOutput -CommandNames @("az", "az.cmd", "az.ps1") -Arguments @("account", "get-access-token", "--resource-type", "ms-graph", "--output", "json")
+    if ([string]::IsNullOrWhiteSpace($json)) { return "" }
+    try {
+        $obj = $json | ConvertFrom-Json
+        return [string]$obj.accessToken
+    } catch {
+        return ""
+    }
+}
+
+function Get-NomadInboxGmailHeader {
+    param($Message, [string]$Name)
+    foreach ($header in @($Message.payload.headers)) {
+        if ($header.name -ieq $Name) { return [string]$header.value }
+    }
+    return ""
+}
+
+function ConvertFrom-NomadInboxGmailMessage {
+    param($Message, $Account)
+    $headers = @{}
+    foreach ($header in @($Message.payload.headers)) {
+        if ($header.name) { $headers[[string]$header.name] = [string]$header.value }
+    }
+    $internalDate = [double]0
+    [double]::TryParse([string]$Message.internalDate, [ref]$internalDate) | Out-Null
+    $receivedAt = if ($internalDate -gt 0) {
+        ([datetimeoffset]::FromUnixTimeMilliseconds([int64]$internalDate)).UtcDateTime.ToString("o")
+    } else {
+        ConvertTo-NomadInboxIsoDate (Get-NomadInboxGmailHeader $Message "Date")
+    }
+    $labelIds = @($Message.labelIds)
+    New-NomadInboxLiveMessage `
+        -Provider "gmail-api" `
+        -AccountId $Account.id `
+        -ProviderMessageId ([string]$Message.id) `
+        -ConversationId ([string]$Message.threadId) `
+        -Folder $Account.folder `
+        -Subject (Get-NomadInboxGmailHeader $Message "Subject") `
+        -From (ConvertTo-NomadInboxAddress (Get-NomadInboxGmailHeader $Message "From")) `
+        -To (ConvertTo-NomadInboxAddressList (Get-NomadInboxGmailHeader $Message "To")) `
+        -Cc (ConvertTo-NomadInboxAddressList (Get-NomadInboxGmailHeader $Message "Cc")) `
+        -ReceivedAt $receivedAt `
+        -SentAt (ConvertTo-NomadInboxIsoDate (Get-NomadInboxGmailHeader $Message "Date")) `
+        -Snippet ([string]$Message.snippet) `
+        -Headers $headers `
+        -Unread ($labelIds -contains "UNREAD") `
+        -Flagged ($labelIds -contains "STARRED") `
+        -Importance $null `
+        -Categories $labelIds `
+        -Attachments @() `
+        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "star", "archive", "trash")
+}
+
+function Invoke-NomadInboxGmailApiSync {
+    param($Account, [datetime]$StartedAt)
+    $token = Get-NomadInboxGmailAccessToken
+    if ([string]::IsNullOrWhiteSpace($token)) {
+        return New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAuth" -Reason "Set NOMADINBOX_GMAIL_ACCESS_TOKEN or sign in with gcloud using Gmail scopes." -Synced 0 -StartedAt $StartedAt
+    }
+    $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
+    $folder = if ([string]::IsNullOrWhiteSpace($Account.folder)) { "Inbox" } else { [string]$Account.folder }
+    $headers = @{ Authorization = "Bearer $token" }
+    $queryParams = @{
+        maxResults = [Math]::Max(1, [Math]::Min(100, $limit))
+    }
+    if ($folder -ieq "Inbox") { $queryParams.labelIds = "INBOX" }
+    if (-not [string]::IsNullOrWhiteSpace($Account.query)) { $queryParams.q = [string]$Account.query }
+    $query = ($queryParams.GetEnumerator() | ForEach-Object { "{0}={1}" -f [uri]::EscapeDataString($_.Key), [uri]::EscapeDataString([string]$_.Value) }) -join "&"
+    $listUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages?$query"
+    try {
+        $list = Invoke-RestMethod -Method Get -Uri $listUri -Headers $headers
+        $records = @()
+        foreach ($messageRef in @($list.messages | Where-Object { $null -ne $_ -and $_.id })) {
+            $messageUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages/$([uri]::EscapeDataString([string]$messageRef.id))?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID"
+            $message = Invoke-RestMethod -Method Get -Uri $messageUri -Headers $headers
+            $records += ConvertFrom-NomadInboxGmailMessage -Message $message -Account $Account
+        }
+        Write-NomadInboxLiveMessages -Records $records
+        Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = $records.Count } -ErrorMessage $null | Out-Null
+        return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced $records.Count -StartedAt $StartedAt
+    } catch {
+        Write-NomadInboxActionRecord -ActionType "sync" -Status "error" -InputObject @{ accountId = $Account.id; provider = $Account.provider } -ResultObject @{} -ErrorMessage ([string]$_.Exception.Message) | Out-Null
+        return New-NomadInboxSyncResult -Account $Account -Status "error" -Reason ([string]$_.Exception.Message) -Synced 0 -StartedAt $StartedAt
+    }
+}
+
+function ConvertTo-NomadInboxGraphAddress {
+    param($Recipient)
+    if ($null -eq $Recipient -or $null -eq $Recipient.emailAddress) {
+        return [pscustomobject]@{ name = $null; email = "unknown@example.invalid" }
+    }
+    [pscustomobject]@{ name = $Recipient.emailAddress.name; email = $Recipient.emailAddress.address }
+}
+
+function ConvertFrom-NomadInboxGraphMessage {
+    param($Message, $Account)
+    $flagged = $false
+    if ($Message.flag -and $Message.flag.flagStatus) { $flagged = ([string]$Message.flag.flagStatus) -ne "notFlagged" }
+    New-NomadInboxLiveMessage `
+        -Provider "outlook-graph" `
+        -AccountId $Account.id `
+        -ProviderMessageId ([string]$Message.id) `
+        -ConversationId ([string]$Message.conversationId) `
+        -Folder $Account.folder `
+        -Subject ([string]$Message.subject) `
+        -From (ConvertTo-NomadInboxGraphAddress $Message.from) `
+        -To (@($Message.toRecipients | ForEach-Object { ConvertTo-NomadInboxGraphAddress $_ })) `
+        -Cc (@($Message.ccRecipients | ForEach-Object { ConvertTo-NomadInboxGraphAddress $_ })) `
+        -ReceivedAt (ConvertTo-NomadInboxIsoDate ([string]$Message.receivedDateTime)) `
+        -SentAt (ConvertTo-NomadInboxIsoDate ([string]$Message.sentDateTime)) `
+        -Snippet ([string]$Message.bodyPreview) `
+        -Headers @{} `
+        -Unread (-not [bool]$Message.isRead) `
+        -Flagged $flagged `
+        -Importance ([string]$Message.importance) `
+        -Categories @($Message.categories) `
+        -Attachments @() `
+        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash")
+}
+
+function Invoke-NomadInboxOutlookGraphSync {
+    param($Account, [datetime]$StartedAt)
+    $token = Get-NomadInboxGraphAccessToken
+    if ([string]::IsNullOrWhiteSpace($token)) {
+        return New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAuth" -Reason "Set NOMADINBOX_GRAPH_ACCESS_TOKEN or sign in with Azure CLI for Microsoft Graph." -Synced 0 -StartedAt $StartedAt
+    }
+    $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
+    $folder = if ([string]::IsNullOrWhiteSpace($Account.folder)) { "Inbox" } else { [string]$Account.folder }
+    $headers = @{ Authorization = "Bearer $token" }
+    $top = [Math]::Max(1, [Math]::Min(100, $limit))
+    $select = "id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,flag,importance,categories"
+    $base = if ($folder -ieq "Inbox") { "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages" } else { "https://graph.microsoft.com/v1.0/me/messages" }
+    $uri = "$base?`$top=$top&`$orderby=receivedDateTime desc&`$select=$select"
+    try {
+        $response = Invoke-RestMethod -Method Get -Uri $uri -Headers $headers
+        $records = @($response.value | Where-Object { $null -ne $_ -and $_.id } | ForEach-Object { ConvertFrom-NomadInboxGraphMessage -Message $_ -Account $Account })
+        Write-NomadInboxLiveMessages -Records $records
+        Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = $records.Count } -ErrorMessage $null | Out-Null
+        return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced $records.Count -StartedAt $StartedAt
+    } catch {
+        Write-NomadInboxActionRecord -ActionType "sync" -Status "error" -InputObject @{ accountId = $Account.id; provider = $Account.provider } -ResultObject @{} -ErrorMessage ([string]$_.Exception.Message) | Out-Null
+        return New-NomadInboxSyncResult -Account $Account -Status "error" -Reason ([string]$_.Exception.Message) -Synced 0 -StartedAt $StartedAt
+    }
+}
+
+function ConvertFrom-NomadInboxOutlookDesktopItem {
+    param($Item, $Account)
+    $receivedAt = if ($Item.ReceivedTime) { ([datetime]$Item.ReceivedTime).ToUniversalTime().ToString("o") } else { (Get-Date).ToUniversalTime().ToString("o") }
+    $sentAt = if ($Item.SentOn) { ([datetime]$Item.SentOn).ToUniversalTime().ToString("o") } else { $null }
+    $entryId = if ($Item.EntryID) { [string]$Item.EntryID } else { ConvertTo-NomadInboxHash ([string]$Item.Subject + [string]$receivedAt) }
+    $senderEmail = if ($Item.SenderEmailAddress) { [string]$Item.SenderEmailAddress } else { "unknown@example.invalid" }
+    $senderName = if ($Item.SenderName) { [string]$Item.SenderName } else { $null }
+    $body = if ($Item.Body) { [string]$Item.Body } else { "" }
+    New-NomadInboxLiveMessage `
+        -Provider "outlook-desktop" `
+        -AccountId $Account.id `
+        -ProviderMessageId $entryId `
+        -ConversationId ([string]$Item.ConversationID) `
+        -Folder $Account.folder `
+        -Subject ([string]$Item.Subject) `
+        -From ([pscustomobject]@{ name = $senderName; email = $senderEmail }) `
+        -To (ConvertTo-NomadInboxAddressList ([string]$Item.To)) `
+        -Cc (ConvertTo-NomadInboxAddressList ([string]$Item.CC)) `
+        -ReceivedAt $receivedAt `
+        -SentAt $sentAt `
+        -Snippet $body `
+        -Headers @{} `
+        -Unread ([bool]$Item.UnRead) `
+        -Flagged ([bool]$Item.IsMarkedAsTask) `
+        -Importance ([string]$Item.Importance) `
+        -Categories (@(([string]$Item.Categories) -split ',' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })) `
+        -Attachments @() `
+        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash")
+}
+
+function Invoke-NomadInboxOutlookDesktopSync {
+    param($Account, [datetime]$StartedAt)
+    if (-not $IsWindows -and $PSVersionTable.PSEdition -eq "Core") {
+        return New-NomadInboxSyncResult -Account $Account -Status "unsupportedRuntime" -Reason "Outlook Desktop sync requires Windows PowerShell in a signed-in desktop session." -Synced 0 -StartedAt $StartedAt
+    }
+    $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
+    try {
+        $outlook = New-Object -ComObject Outlook.Application
+        $namespace = $outlook.GetNamespace("MAPI")
+        $folder = $namespace.GetDefaultFolder(6)
+        $items = $folder.Items
+        $items.Sort("[ReceivedTime]", $true)
+        $records = @()
+        $count = [Math]::Min($items.Count, [Math]::Max(1, $limit))
+        for ($i = 1; $i -le $count; $i++) {
+            try {
+                $item = $items.Item($i)
+                if ($null -eq $item) { continue }
+                if ($item.MessageClass -and -not ([string]$item.MessageClass).StartsWith("IPM.Note")) { continue }
+                $records += ConvertFrom-NomadInboxOutlookDesktopItem -Item $item -Account $Account
+            } catch {
+            }
+        }
+        Write-NomadInboxLiveMessages -Records $records
+        Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = $records.Count } -ErrorMessage $null | Out-Null
+        return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced $records.Count -StartedAt $StartedAt
+    } catch {
+        Write-NomadInboxActionRecord -ActionType "sync" -Status "error" -InputObject @{ accountId = $Account.id; provider = $Account.provider } -ResultObject @{} -ErrorMessage ([string]$_.Exception.Message) | Out-Null
+        return New-NomadInboxSyncResult -Account $Account -Status "error" -Reason ([string]$_.Exception.Message) -Synced 0 -StartedAt $StartedAt
+    }
+}
+
 function Invoke-NomadInboxAccountSync {
     param($Account)
     $startedAt = (Get-Date).ToUniversalTime()
     if (-not [bool]$Account.enabled) {
-        return [pscustomobject]@{
-            accountId = $Account.id
-            displayName = $Account.displayName
-            provider = $Account.provider
-            status = "skipped"
-            reason = "accountDisabled"
-            synced = 0
-            startedAt = $startedAt.ToString("o")
-            finishedAt = (Get-Date).ToUniversalTime().ToString("o")
-        }
+        return New-NomadInboxSyncResult -Account $Account -Status "skipped" -Reason "accountDisabled" -Synced 0 -StartedAt $startedAt
     }
 
     if ($Account.provider -eq "sample") {
         $sample = New-NomadInboxSampleMessage
         $sample.id = "sample:" + $Account.id + ":" + (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
-        ($sample | ConvertTo-Json -Depth 50 -Compress) | Add-Content -LiteralPath (Get-NomadInboxMessagesPath)
+        Write-NomadInboxLiveMessages -Records @($sample)
         Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider } -ResultObject @{ synced = 1 } -ErrorMessage $null | Out-Null
-        return [pscustomobject]@{
-            accountId = $Account.id
-            displayName = $Account.displayName
-            provider = $Account.provider
-            status = "ok"
-            reason = $null
-            synced = 1
-            startedAt = $startedAt.ToString("o")
-            finishedAt = (Get-Date).ToUniversalTime().ToString("o")
-        }
+        return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced 1 -StartedAt $startedAt
+    }
+
+    switch ($Account.provider) {
+        "gmail-api" { return Invoke-NomadInboxGmailApiSync -Account $Account -StartedAt $startedAt }
+        "outlook-graph" { return Invoke-NomadInboxOutlookGraphSync -Account $Account -StartedAt $startedAt }
+        "outlook-desktop" { return Invoke-NomadInboxOutlookDesktopSync -Account $Account -StartedAt $startedAt }
     }
 
     Write-NomadInboxActionRecord -ActionType "sync" -Status "dryRun" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = 0; reason = "providerAdapterNotInstalled" } -ErrorMessage $null | Out-Null
-    [pscustomobject]@{
-        accountId = $Account.id
-        displayName = $Account.displayName
-        provider = $Account.provider
-        status = "pendingProviderAdapter"
-        reason = "Provider adapter is declared but not installed in this clean bootstrap yet."
-        synced = 0
-        startedAt = $startedAt.ToString("o")
-        finishedAt = (Get-Date).ToUniversalTime().ToString("o")
-    }
+    New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAdapter" -Reason "Provider adapter is not installed for this provider." -Synced 0 -StartedAt $startedAt
 }
 
 function Test-NomadInboxWorkerRunning {
