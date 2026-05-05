@@ -6,6 +6,9 @@ The callable service surface is named NomadMail. NomadMail wraps the NomadInbox 
 
 This repository starts with no copied mailbox data, OAuth token caches, local credential files, or user-specific message exports. Runtime data stays local and is ignored by git.
 
+To understand why NomadInbox was built and what product scope it aims to cover,
+read [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md).
+
 ## What It Does
 
 NomadInbox gives agents a provider-neutral way to read, search, inspect, and safely prepare actions for email across:

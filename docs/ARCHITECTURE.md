@@ -99,6 +99,55 @@ Per-account background sync settings are local and ignored by git:
 
 The tracked `config/accounts.example.json` shows the shape users can copy and customize.
 
+## Runtime Data Backup And Restore
+
+Runtime backup is a user-owned local backup problem, not a Git workflow.
+Mailbox projections, archive imports, attachment files, account ids, sync status,
+and action logs must stay out of the repository even when users want durable
+backup.
+
+Recommended backup shape:
+
+- Create a timestamped backup bundle outside the repository, such as
+  `%USERPROFILE%\Documents\NomadInbox Backups\nomadinbox-runtime-YYYYMMDD-HHMMSS.zip`
+  on Windows or an equivalent local backup folder on other operating systems.
+- Store the backup folder on an encrypted volume or in a user-approved encrypted
+  backup target such as BitLocker-protected storage, OneDrive Personal Vault, or
+  an encrypted external drive.
+- Include durable runtime files:
+  - `data/messages.jsonl`
+  - `data/archive-messages.jsonl`
+  - `data/import-status.json`
+  - `data/sync-status.json`
+  - `data/actions.jsonl`
+  - `data/attachments/`
+  - `config/accounts.json`
+- Exclude rebuildable or volatile files by default:
+  - `data/archive-index.jsonl`
+  - `data/sync-worker.pid`
+  - `data/sync-worker.log`
+  - generated `target/` binaries
+  - temporary `runtime/` and agent scratch files
+- Exclude OAuth tokens, client secrets, credential caches, and raw mail exports
+  unless the user explicitly chooses an encrypted secret backup. The normal
+  restore path should reconnect accounts through the agent-guided provider
+  setup instead of silently restoring credentials.
+- Write a small manifest next to the bundle containing source repo path, source
+  data directory, created-at timestamp, NomadInbox version or commit, included
+  files, and SHA-256 hashes for integrity checks.
+
+The safest restore model is explicit and local: stop the tray and sync worker,
+extract the bundle into the intended `data/` directory and `config/accounts.json`
+location, run `backup status` / `service status`, then reconnect provider
+credentials only when needed. For testing or migration, restore into a separate
+folder and launch NomadInbox with `NOMADINBOX_DATA_DIR` pointing at that folder
+so the default runtime store is not overwritten.
+
+Future CLI support should implement this as request-driven commands, for
+example `backup export` and `backup restore --target-data-dir`, with a dry-run
+restore preview and no credential backup unless the user provides an encrypted
+secret-backup option.
+
 ## Agent Service Contract
 
 NomadMail currently exposes these MCP tools:

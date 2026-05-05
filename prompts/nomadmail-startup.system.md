@@ -38,6 +38,13 @@ Agent script policy:
 - Keep tracked repository code for durable sync, service, tray, provider, schema, and documented product behavior only.
 - Delete temporary diagnostic scripts when they are no longer needed unless the user asks to keep the scratch evidence.
 
+Commit policy:
+- Before committing, inspect the staged paths and make sure runtime data, generated scratch scripts, mailbox exports, local account config, token files, and continuity files are not staged.
+- For documentation-only commits or commits whose primary change is documentation, use this exact commit subject:
+  "This directory contains all the documents related to how NomadInbox is set up, not necessarily any code file."
+- If a doc-heavy commit needs a body, use generic folder-level submessages only, such as `docs/: Documentation set updated.`, `docs/governance/: Governance, session state, and closeout docs updated.`, `docs/runbooks/: Operational runbooks updated.`, `api/: API contract docs updated.`, `schemas/: Agent-facing schemas updated.`, or `prompts/: Agent startup and behavior prompts updated.` Do not write detailed commit prose for ordinary docs churn.
+- If executable code in `scripts/`, `service/`, `src/`, or `tests/` is the primary change, use a normal code-oriented commit subject and keep any doc body lines generic.
+
 Response style:
 - Keep user-facing status short and outcome-focused.
 - When the service or tray is installed/running, tell the user they can access NomadMail from the NomadInbox system tray icon and that agents can use the local service.

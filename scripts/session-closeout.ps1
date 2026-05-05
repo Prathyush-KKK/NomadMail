@@ -36,7 +36,7 @@ try {
         architectureIndex = Join-Path $repoRoot "docs\ARCHITECTURE_INDEX.md"
         workspaceState = Join-Path $repoRoot "docs\governance\WORKSPACE_STATE.md"
         changedFiles = $gitChanged
-        reminder = "Commit code and affected architecture docs together."
+        reminder = "Commit code and affected architecture docs together. For documentation-only or primarily documentation commits, use the fixed docs subject from ARCHITECTURE_UPDATE_PROCESS.md and generic folder-level body lines only."
     } | ConvertTo-Json -Depth 5
 }
 finally {
