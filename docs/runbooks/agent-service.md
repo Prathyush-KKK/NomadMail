@@ -36,6 +36,7 @@ Client command shape:
 Primary tools:
 
 - `nomadmail_get_agent_guide`
+- `nomadmail_get_startup_system_prompt`
 - `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
@@ -59,6 +60,7 @@ Common calls:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8791/agent-guide
+Invoke-RestMethod http://127.0.0.1:8791/startup-system-prompt
 Invoke-RestMethod http://127.0.0.1:8791/health
 Invoke-RestMethod http://127.0.0.1:8791/providers
 Invoke-RestMethod "http://127.0.0.1:8791/messages?query=invoice&limit=5"
@@ -67,10 +69,13 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8791/sync/once -Body '{"accountI
 
 ## Guidance for Calling Agents
 
-Other agents should call `nomadmail_get_agent_guide` first. It returns the current storage boundary, safe import workflow, live-sync requirements, and target-index handoff pattern.
+Other agents should call `nomadmail_get_agent_guide` first. It returns the current storage boundary, safe import workflow, live-sync requirements, target-index handoff pattern, and the canonical startup system prompt.
+
+The startup system prompt is owned by NomadInbox in `prompts/nomadmail-startup.system.md`. Agents should load it through `nomadmail_get_startup_system_prompt` or HTTP `/startup-system-prompt` when opening this repository as a workspace. This is system behavior, not a prompt the user is responsible for keeping in sync.
 
 When an agent opens this repository as a user workspace:
 
+- Load the built-in startup system prompt.
 - Detect the operating system first.
 - If it is Windows, run `nomadmail_install_windows_helper` or `.\scripts\nomad-inbox.ps1 install windows-helper` before connecting accounts.
 - If it is not Windows, do not install the Windows helper, start the tray, or offer Outlook Desktop COM sync. Use the MCP server for platform-independent local context tools and report what provider sync runtime is missing.

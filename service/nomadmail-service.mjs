@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, "..");
 const cliPath = join(repoRoot, "scripts", "nomad-inbox.ps1");
+const startupSystemPromptPath = join(repoRoot, "prompts", "nomadmail-startup.system.md");
 const serviceVersion = "0.1.0";
 
 const jsonHeaders = {
@@ -21,6 +22,15 @@ const tools = [
   {
     name: "nomadmail_get_agent_guide",
     description: "Return guidance for agents that need to parse email backups, sync live mail, and hand normalized mail data to a target repository index without accidentally updating NomadInbox storage.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_get_startup_system_prompt",
+    description: "Return the canonical NomadInbox/NomadMail startup system prompt that agents should load automatically when this repository is opened as a workspace.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -224,14 +234,30 @@ const tools = [
   },
 ];
 
+function getStartupSystemPrompt() {
+  return readFileSync(startupSystemPromptPath, "utf8").replace(/\r\n/g, "\n").trim();
+}
+
+function startupSystemPrompt() {
+  return {
+    status: "ok",
+    service: "NomadMail",
+    name: "nomadmail-startup",
+    promptType: "system",
+    path: startupSystemPromptPath,
+    text: getStartupSystemPrompt(),
+  };
+}
+
 function agentGuide() {
   return {
     status: "ok",
     service: "NomadMail",
     purpose: "Agent guidance for parsing email backups, syncing live mail, and updating a target repository index.",
     runtime: runtimeInfo(),
+    startupSystemPrompt: startupSystemPrompt(),
     startupGuidance: [
-      "When opened in a user workspace, first detect the operating system and report the platform-specific setup path.",
+      "When opened in a user workspace, load startupSystemPrompt.text as the system-level instruction for NomadInbox/NomadMail behavior.",
       "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations.",
       "On non-Windows, do not install the Windows helper or offer Outlook Desktop sync. Explain that the NomadMail MCP server is still Node-based and can expose local JSONL context tools, while live sync requires PowerShell Core plus a supported provider runtime or a future native provider adapter.",
       "Never discover tokens, profiles, exports, connected accounts, or mailbox contents until the user approves the exact source and scope."
@@ -699,6 +725,8 @@ async function callTool(name, args = {}) {
   switch (name) {
     case "nomadmail_get_agent_guide":
       return agentGuide();
+    case "nomadmail_get_startup_system_prompt":
+      return startupSystemPrompt();
     case "nomadmail_install_windows_helper":
       return installWindowsHelper(args);
     case "nomadmail_health_check":
@@ -913,6 +941,10 @@ async function handleHttp(req, res) {
       sendJson(res, 200, agentGuide());
       return;
     }
+    if (req.method === "GET" && url.pathname === "/startup-system-prompt") {
+      sendJson(res, 200, startupSystemPrompt());
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/install/windows-helper") {
       sendJson(res, 200, await installWindowsHelper(await readBody(req)));
       return;
@@ -1004,6 +1036,7 @@ async function selfTest() {
   const providers = await safeRunCli(["providers", "list"]);
   const search = await searchMessages({ query: "", limit: 1 });
   const guide = agentGuide();
+  const prompt = startupSystemPrompt();
   return {
     status: "ok",
     service: "NomadMail",
@@ -1013,6 +1046,7 @@ async function selfTest() {
     providerCount: providers?.providers?.length || 0,
     searchStatus: search.status,
     agentGuideStatus: guide.status,
+    startupSystemPromptStatus: prompt.status,
   };
 }
 
@@ -1043,9 +1077,11 @@ if (mode === "mcp") {
     });
 } else if (mode === "agent-guide") {
   process.stdout.write(`${JSON.stringify(agentGuide(), null, 2)}\n`);
+} else if (mode === "system-prompt") {
+  process.stdout.write(`${JSON.stringify(startupSystemPrompt(), null, 2)}\n`);
 } else if (mode === "tools") {
   process.stdout.write(`${JSON.stringify({ status: "ok", service: "NomadMail", tools }, null, 2)}\n`);
 } else {
-  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|tools]\n");
+  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|tools]\n");
   process.exitCode = 2;
 }

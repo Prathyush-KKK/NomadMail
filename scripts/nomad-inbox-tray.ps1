@@ -4,6 +4,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $cli = Join-Path $repoRoot "scripts\nomad-inbox.ps1"
 $configPath = Join-Path $repoRoot "config\accounts.json"
 $exampleConfigPath = Join-Path $repoRoot "config\accounts.example.json"
+$startupPromptPath = Join-Path $repoRoot "prompts\nomadmail-startup.system.md"
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -62,18 +63,17 @@ function Ensure-AccountsConfig {
 }
 
 function Get-NomadInboxAgentPrompt {
-    @"
-I want to connect NomadMail/NomadInbox email accounts for auto sync.
+    $systemPrompt = if (Test-Path -LiteralPath $startupPromptPath) {
+        (Get-Content -LiteralPath $startupPromptPath -Raw).Trim()
+    } else {
+        "Load the NomadMail agent guide, ask before account discovery, and do not start auto sync until explicitly approved."
+    }
 
-Please follow this permission-first flow:
-1. Ask me which provider/account to connect: Gmail API, Outlook Graph, or Outlook Desktop.
-2. Before discovering credentials or profiles, ask for explicit permission for each source:
-   - Gmail: local NOMADINBOX_GMAIL_ACCESS_TOKEN or Gmail-scoped gcloud login.
-   - Outlook Graph: local NOMADINBOX_GRAPH_ACCESS_TOKEN or Azure CLI Microsoft Graph token.
-   - Outlook Desktop: current signed-in Windows Outlook profile through COM.
-3. Enable only the approved account(s) in C:\Users\prat\Documents\osm\NomadInbox\config\accounts.json.
-4. Run one request-driven sync first and report provider status, account status, message counts, and failures.
-5. Start background auto sync only after I approve it.
+    @"
+$systemPrompt
+
+Current task:
+Connect NomadMail/NomadInbox email accounts for auto sync only after asking which provider and account scope to use. Run one request-driven sync first, then start background auto sync only after explicit approval.
 "@
 }
 
@@ -206,9 +206,9 @@ function Show-NomadInboxConnectPrompt {
     Ensure-AccountsConfig
     $copied = Copy-NomadInboxAgentPrompt
     $message = if ($copied) {
-        "An agent prompt was copied to your clipboard. Open your agent chat, paste it, and approve only the email account discovery you want."
+        "The built-in NomadMail startup system prompt was copied as a fallback for agents without NomadMail tool access. Open your agent chat and use NomadMail agent guide first when available."
     } else {
-        "Open your agent chat and ask it to connect NomadMail accounts. It should ask permission before discovering Gmail tokens, Graph tokens, Azure CLI state, or the Outlook Desktop profile."
+        "Open your agent chat and ask it to use the NomadMail agent guide. It should ask permission before discovering Gmail tokens, Graph tokens, Azure CLI state, or the Outlook Desktop profile."
     }
     $message = $message + [Environment]::NewLine + [Environment]::NewLine + "Accounts config: $configPath"
     Show-NomadInboxBalloon $Icon "Connect NomadInbox accounts" $message

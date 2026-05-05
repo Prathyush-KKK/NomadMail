@@ -61,13 +61,18 @@ This sample validates archive ingestion without using real mailbox exports.
     }
 
     $agentGuide = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-guide | ConvertFrom-Json
-    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule) {
+    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.startupSystemPrompt.text) {
         throw "agent guide failed"
+    }
+
+    $systemPrompt = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") system-prompt | ConvertFrom-Json
+    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*Your first response must show*") {
+        throw "startup system prompt failed"
     }
 
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "agent service self-test", "agent guide")
+        tests = @("doctor", "providers list", "accounts list", "install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "agent service self-test", "agent guide", "startup system prompt")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {

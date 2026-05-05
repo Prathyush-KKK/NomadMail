@@ -10,6 +10,7 @@ NomadInbox processes are documented explicitly so provider behavior, safety rule
 | Health check | `doctor` command | Repo files, config, provider status | JSON health result | None unless provider checks cache | Runbooks, SLOs |
 | Provider discovery | `providers list` | Provider registry | Provider capability JSON | None | Service catalog, C4 container diagram |
 | Agent tool discovery | MCP `tools/list`, `node service/nomadmail-service.mjs tools` | NomadMail tool registry | MCP tool schemas | None | README, service catalog, OpenAPI |
+| Startup system prompt discovery | `nomadmail_get_startup_system_prompt`, `/startup-system-prompt` | `prompts/nomadmail-startup.system.md` | System prompt JSON | None | README, agent service runbook, OpenAPI |
 | Agent callable service | `nomadmail-mcp.ps1`, `nomadmail-http.ps1` | MCP/HTTP requests | Agent-readable JSON responses | Reads local stores and may call CLI | Agent service runbook, C4, OpenAPI |
 | Windows agent helper install | `install windows-helper`, `nomadmail_install_windows_helper` | OS check, optional data/install paths | Helper launcher and helper status JSON | `%LOCALAPPDATA%\NomadInbox\agent-helper`, ignored runtime data | README, runbooks, service catalog, OpenAPI |
 | Config inspection | `config status` | Local env/config | Redacted config status | None | Config template, runbooks |

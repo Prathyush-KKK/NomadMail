@@ -18,6 +18,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentGuide"
+  /startup-system-prompt:
+    get:
+      operationId: nomadmailGetStartupSystemPrompt
+      summary: Return the canonical NomadInbox/NomadMail startup system prompt
+      description: Agents should load this prompt automatically when opening NomadInbox as a workspace. It is owned by the system, not by the user.
+      responses:
+        "200":
+          description: Startup system prompt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemPrompt"
   /health:
     get:
       operationId: nomadmailHealthCheck
@@ -240,6 +252,8 @@ components:
           type: string
         purpose:
           type: string
+        startupSystemPrompt:
+          $ref: "#/components/schemas/SystemPrompt"
         storageBoundary:
           type: object
           properties:
@@ -269,6 +283,22 @@ components:
           type: array
           items:
             type: string
+    SystemPrompt:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        name:
+          type: string
+        promptType:
+          type: string
+          enum: [system]
+        path:
+          type: string
+        text:
+          type: string
     Account:
       type: object
       properties:

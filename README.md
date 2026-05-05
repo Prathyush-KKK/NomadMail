@@ -32,30 +32,11 @@ Open this repository in your AI agent workspace:
 C:\Users\prat\Documents\osm\NomadInbox
 ```
 
-Use this as the agent startup system prompt:
+NomadInbox owns the startup system prompt. The user should not have to paste or maintain it.
 
-```text
-You are the NomadInbox/NomadMail setup agent for this workspace.
+Agents should load [nomadmail-startup.system.md](prompts/nomadmail-startup.system.md) or call `nomadmail_get_startup_system_prompt` / HTTP `/startup-system-prompt`. The same prompt is also embedded in `nomadmail_get_agent_guide`.
 
-Goal:
-Make approved Gmail, Outlook, Outlook Desktop, and local email export context available to agents through the local NomadMail service while keeping mailbox data, credentials, sync logs, and indexes local and out of GitHub.
-
-On startup:
-1. Detect the operating system and workspace path.
-2. Verify repository setup, NomadMail service health, provider availability, account config, and git ignore boundaries.
-3. If this is Windows, install the NomadInbox PowerShell helper so sync operations, connected account config, status files, and local message stores can be tracked. Do not start auto sync yet.
-4. If this is not Windows, do not install the Windows helper, start the tray, or offer Outlook Desktop sync. Explain that the NomadMail MCP server is platform-independent for agent tool access, and that live provider sync needs PowerShell Core plus a supported provider runtime or a future native adapter.
-
-Your first response must show:
-- what NomadInbox can do in this workspace now
-- which mail sources are available, unavailable, or need setup
-- where local data will be stored
-- which files are protected from GitHub by git ignore rules
-- which actions need user approval
-- the safest next step, asking me to choose one source and one scope
-
-Do not read mailbox data, scan exports, discover tokens, enable accounts, store full bodies, save attachments, send mail, mutate mail, or start auto sync until I explicitly approve that action.
-```
+On first response, the agent should show what NomadInbox can do in this workspace now, which mail sources are available or need setup, where local data will be stored, which files are protected from GitHub, what actions need approval, and the safest next step.
 
 What the agent can do with NomadInbox:
 
@@ -104,6 +85,8 @@ The service supports provider/account discovery, one-shot sync, local message se
 
 Agents should call `nomadmail_get_agent_guide` or HTTP `/agent-guide` before syncing mail or parsing email backups for another repository.
 
+Agents should load the built-in startup system prompt from `nomadmail_get_startup_system_prompt` or HTTP `/startup-system-prompt` when opening this repository as a workspace.
+
 The MCP server is a Node.js service intended to start on any OS, including direct launch with `node service/nomadmail-service.mjs mcp`. Windows agents should install the PowerShell helper for sync/account tracking. Non-Windows agents should keep using MCP for local JSONL context tools and return a clear unsupported-runtime response for Windows-only helper, tray, and Outlook Desktop operations.
 
 ## Repository Map
@@ -113,6 +96,7 @@ The MCP server is a Node.js service intended to start on any OS, including direc
 | `scripts/` | CLI entrypoints, tray launcher, MCP/HTTP launchers, validation scripts |
 | `src/NomadInbox/` | Core PowerShell module and provider sync contract |
 | `service/` | NomadMail MCP and HTTP service |
+| `prompts/` | System prompts owned by NomadInbox/NomadMail |
 | `providers/` | Provider-specific setup notes |
 | `schemas/` | Agent-facing JSON contracts |
 | `docs/` | Product, architecture, ADRs, runbooks, service catalog, SLOs |

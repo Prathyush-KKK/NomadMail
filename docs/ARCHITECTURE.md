@@ -46,6 +46,11 @@ state and track connected account config. Non-Windows agents keep the MCP server
 available for local JSONL context tools and return clear unsupported-runtime
 guidance for Windows-only tray and Outlook Desktop operations.
 
+The startup system prompt is a versioned system artifact at
+`prompts/nomadmail-startup.system.md`. The MCP/HTTP service exposes that exact
+prompt through `nomadmail_get_startup_system_prompt`, `/startup-system-prompt`,
+and the `startupSystemPrompt` field in `nomadmail_get_agent_guide`.
+
 ## Runtime Data
 
 Runtime data is local and ignored by git:
@@ -74,6 +79,7 @@ The tracked `config/accounts.example.json` shows the shape users can copy and cu
 NomadMail currently exposes these MCP tools:
 
 - `nomadmail_get_agent_guide`
+- `nomadmail_get_startup_system_prompt`
 - `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
