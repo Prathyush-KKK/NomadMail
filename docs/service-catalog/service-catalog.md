@@ -5,10 +5,13 @@
 | NomadInbox CLI | Local command surface | Bootstrapped | Local operator | High |
 | NomadMail MCP Server | Agent-native stdio service | Bootstrapped | Local operator | High |
 | NomadMail HTTP Service | Local REST-style service | Bootstrapped | Local operator | High |
+| Workspace State | Agent resume state document | Bootstrapped | Local operator | Medium |
 | Windows Agent Helper | Local PowerShell helper install | Bootstrapped | Local operator | Medium |
-| NomadInbox Core | Provider registry, safety, schemas | Bootstrapped | Local operator | High |
-| Background Sync Worker | Optional user-session polling | Bootstrapped | Local operator | Medium |
-| System Tray Controller | Local status/settings UI | Bootstrapped | Local operator | Medium |
+| Locale Time Context | User culture/time-zone normalization | Bootstrapped | Local operator | High |
+| Latest Email Freshness Gate | One-shot sync before latest-email answers | Bootstrapped | Local operator | High |
+| NomadInbox Core | Provider catalog, account config, safety rules, schemas | Bootstrapped | Local operator | High |
+| Background Sync Worker | User-session polling for enabled accounts | Bootstrapped | Local operator | Medium |
+| Compiled System Tray Client | Local status/settings UI | Bootstrapped | Local operator | Medium |
 | Archive Importer | Read-only historical mail context ingestion | Bootstrapped | Local operator | Medium |
 | Backup Status Prompter | Live/archive backup counts and user guidance | Bootstrapped | Local operator | Medium |
 | Gmail API Provider | Provider adapter | Bootstrapped sync | Local operator | High |

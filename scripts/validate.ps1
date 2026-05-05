@@ -7,14 +7,23 @@ $required = @(
     "config\nomad-inbox.example.ps1",
     "config\accounts.example.json",
     "prompts\nomadmail-startup.system.md",
+    "assets\nomadinbox-mark.svg",
+    "assets\nomadinbox-logo.svg",
+    "assets\nomadinbox-tray.ico",
+    "assets\nomadinbox-tray-32.png",
+    "assets\nomadinbox-tray-256.png",
+    "scripts\build-app-icons.ps1",
     "scripts\install-windows-agent-helper.ps1",
+    "scripts\build-nomad-inbox-tray.ps1",
     "scripts\nomad-inbox.ps1",
     "scripts\nomadmail-http.ps1",
     "scripts\nomadmail-mcp.ps1",
     "scripts\nomad-inbox-worker.ps1",
     "scripts\nomad-inbox-tray.ps1",
+    "scripts\update-workspace-state.ps1",
     "scripts\new-architecture-change.ps1",
     "scripts\session-closeout.ps1",
+    "src\NomadInbox.Tray\NomadInboxTray.cs",
     "src\NomadInbox\NomadInbox.psm1",
     "service\nomadmail-service.mjs",
     "schemas\message.v1.json",
@@ -37,6 +46,7 @@ $required = @(
     "docs\runbooks\agent-service.md",
     "docs\slo\nomadinbox-slo.md",
     "docs\governance\ARCHITECTURE_UPDATE_PROCESS.md",
+    "docs\governance\WORKSPACE_STATE.md",
     "docs\governance\SESSION_CHANGELOG.md",
     "api\openapi\nomadinbox.v1.yaml",
     "api\asyncapi\nomadinbox-events.v1.yaml"
@@ -54,44 +64,79 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     $tracked = git -C $repoRoot ls-files
     $forbiddenTracked = @($tracked | Where-Object {
         $_ -match '^data/' -or
+        $_ -match '^-DataDir/' -or
         $_ -match '^runtime/' -or
         $_ -match '^target/' -or
+        $_ -match '^logs/' -or
+        $_ -match '^downloads/' -or
+        $_ -match '^\.kiro/' -or
+        $_ -match '^AGENTS\.continuity\.md$' -or
+        $_ -match '^CLAUDE\.continuity\.md$' -or
+        $_ -match '^MAYOR_' -or
         $_ -match 'token-cache' -or
         $_ -match 'client_secret' -or
         $_ -match '\.(mbox|eml|pst|msg)$' -or
         $_ -match '^mail-exports/' -or
         $_ -match '^import-staging/' -or
+        $_ -match '^scripts/_.*\.ps1$' -or
         $_ -match '^config/nomad-inbox\.ps1$' -or
         $_ -match '^config/accounts\.json$'
     })
 }
 
 $parseErrors = @()
-$trayPath = Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"
-$tokens = $null
-$errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile($trayPath, [ref]$tokens, [ref]$errors) | Out-Null
-if ($errors) {
-    $parseErrors += @($errors | ForEach-Object { $_.Message })
+foreach ($psPath in @(
+    (Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"),
+    (Join-Path $repoRoot "scripts\build-nomad-inbox-tray.ps1")
+)) {
+    $tokens = $null
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile($psPath, [ref]$tokens, [ref]$errors) | Out-Null
+    if ($errors) {
+        $parseErrors += @($errors | ForEach-Object { "$psPath`: $($_.Message)" })
+    }
 }
 
+$trayPath = Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"
 $trayText = Get-Content -LiteralPath $trayPath -Raw
+$traySourcePath = Join-Path $repoRoot "src\NomadInbox.Tray\NomadInboxTray.cs"
+$traySourceText = Get-Content -LiteralPath $traySourcePath -Raw
+$trayCombinedText = $trayText + "`n" + $traySourceText
 $requiredTrayMarkers = @(
-    "Turn on auto sync",
-    "Turn off auto sync",
-    "Connect accounts with agent",
-    "Get-NomadInboxAgentPrompt",
-    "Open your agent and perform a request-driven NomadMail sync"
+    "Sync now",
+    "Auto sync: on (turn off)",
+    "Auto sync: off (turn on)",
+    "Ask your agent if you want to connect new accounts",
+    "Settings and diagnostics",
+    "BuildMenuFromCache",
+    "DoubleClick",
+    "SettingsForm",
+    "BeginRefresh",
+    "EnsureHttpServiceAsync",
+    "RequestJsonAsync",
+    "NOMADINBOX_DATA_DIR",
+    "IconPath",
+    "LoadAppIcon",
+    "nomadinbox-tray.ico"
 )
-$missingTrayMarkers = @($requiredTrayMarkers | Where-Object { $trayText -notlike "*$_*" })
+$missingTrayMarkers = @($requiredTrayMarkers | Where-Object { $trayCombinedText -notlike "*$_*" })
+$forbiddenTrayMarkers = @(
+    "Show-NomadMailHttpStatus",
+    "Copy-NomadInboxAgentPrompt",
+    "Connect accounts with agent",
+    "NomadMail agent service",
+    "Invoke-NomadInboxCliJson"
+)
+$presentForbiddenTrayMarkers = @($forbiddenTrayMarkers | Where-Object { $trayCombinedText -like "*$_*" })
 
 $result = [pscustomobject]@{
-    status = if ($missing.Count -eq 0 -and $forbiddenTracked.Count -eq 0 -and $parseErrors.Count -eq 0 -and $missingTrayMarkers.Count -eq 0) { "ok" } else { "failed" }
+    status = if ($missing.Count -eq 0 -and $forbiddenTracked.Count -eq 0 -and $parseErrors.Count -eq 0 -and $missingTrayMarkers.Count -eq 0 -and $presentForbiddenTrayMarkers.Count -eq 0) { "ok" } else { "failed" }
     project = $repoRoot
     missing = $missing
     forbiddenTracked = $forbiddenTracked
     parseErrors = $parseErrors
     missingTrayMarkers = $missingTrayMarkers
+    forbiddenTrayMarkers = $presentForbiddenTrayMarkers
 }
 
 $result | ConvertTo-Json -Depth 10

@@ -15,12 +15,17 @@ Import-Module (Join-Path $repoRoot "src\NomadInbox\NomadInbox.psm1") -Force -Dis
 Initialize-NomadInbox | Out-Null
 Initialize-NomadInboxAccountsConfig | Out-Null
 
+function Get-NomadInboxWorkerLogTime {
+    $utcNow = [datetimeoffset]::UtcNow.UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+    return ConvertTo-NomadInboxLocalTimeText $utcNow
+}
+
 while ($true) {
     try {
         $result = Invoke-NomadInboxSyncOnce -WorkerRunning
-        ("[{0}] sync status={1} accounts={2}" -f (Get-Date).ToString("s"), $result.status, $result.accountCount) | Write-Output
+        ("[{0}] sync status={1} accounts={2}" -f (Get-NomadInboxWorkerLogTime), $result.status, $result.accountCount) | Write-Output
     } catch {
-        ("[{0}] sync error={1}" -f (Get-Date).ToString("s"), [string]$_) | Write-Output
+        ("[{0}] sync error={1}" -f (Get-NomadInboxWorkerLogTime), [string]$_) | Write-Output
     }
 
     $accounts = Get-NomadInboxAccounts

@@ -10,13 +10,29 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, "..");
 const cliPath = join(repoRoot, "scripts", "nomad-inbox.ps1");
+const installerPath = join(repoRoot, "scripts", "install-windows-agent-helper.ps1");
 const startupSystemPromptPath = join(repoRoot, "prompts", "nomadmail-startup.system.md");
+const workspaceStatePath = join(repoRoot, "docs", "governance", "WORKSPACE_STATE.md");
 const serviceVersion = "0.1.0";
 
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
 };
+
+const windowsToIanaTimeZones = new Map([
+  ["India Standard Time", "Asia/Kolkata"],
+  ["UTC", "UTC"],
+  ["Eastern Standard Time", "America/New_York"],
+  ["Central Standard Time", "America/Chicago"],
+  ["Mountain Standard Time", "America/Denver"],
+  ["Pacific Standard Time", "America/Los_Angeles"],
+  ["GMT Standard Time", "Europe/London"],
+  ["W. Europe Standard Time", "Europe/Berlin"],
+  ["Tokyo Standard Time", "Asia/Tokyo"],
+  ["China Standard Time", "Asia/Shanghai"],
+  ["AUS Eastern Standard Time", "Australia/Sydney"],
+]);
 
 const tools = [
   {
@@ -31,6 +47,15 @@ const tools = [
   {
     name: "nomadmail_get_startup_system_prompt",
     description: "Return the canonical NomadInbox/NomadMail startup system prompt that agents should load automatically when this repository is opened as a workspace.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_get_workspace_state",
+    description: "Return the living NomadInbox workspace state file so agents can resume from durable session state before refreshing live status.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -132,6 +157,38 @@ const tools = [
         folder: {
           type: "string",
           description: "Optional folder filter for live messages.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_get_latest_message",
+    description: "Run a one-shot live sync by default, then return the newest live synced message summary. Use this for questions like 'what is the latest email' so answers are not based on stale local state.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        accountId: {
+          type: "string",
+          description: "Optional configured account id to sync before reading the latest message.",
+        },
+        provider: {
+          type: "string",
+          description: "Optional provider filter such as gmail-api, outlook-graph, or outlook-desktop.",
+        },
+        folder: {
+          type: "string",
+          description: "Optional folder filter for live messages.",
+        },
+        requireContent: {
+          type: "boolean",
+          default: true,
+          description: "When true, only return a live message with a snippet or locally stored body preview.",
+        },
+        syncFirst: {
+          type: "boolean",
+          default: true,
+          description: "Keep true for latest-email questions. False is only for diagnostics.",
         },
       },
       additionalProperties: false,
@@ -249,25 +306,43 @@ function startupSystemPrompt() {
   };
 }
 
+function workspaceState() {
+  return {
+    status: "ok",
+    service: "NomadMail",
+    name: "nomadinbox-workspace-state",
+    path: workspaceStatePath,
+    text: readFileSync(workspaceStatePath, "utf8").replace(/\r\n/g, "\n").trim(),
+  };
+}
+
 function agentGuide() {
   return {
     status: "ok",
     service: "NomadMail",
     purpose: "Agent guidance for parsing email backups, syncing live mail, and updating a target repository index.",
     runtime: runtimeInfo(),
+    timeHandling: timeContext(),
     startupSystemPrompt: startupSystemPrompt(),
+    workspaceState: workspaceState(),
     startupGuidance: [
       "When opened in a user workspace, load startupSystemPrompt.text as the system-level instruction for NomadInbox/NomadMail behavior.",
-      "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations.",
+      "Read workspaceState.text before answering so the latest durable session state is included before live status refresh.",
+      "Resolve the user's locale and time zone before parsing relative or ambiguous dates. Store normalized timestamps as UTC ISO 8601, but present user-facing times in the user's locale and time zone.",
+      "When the user asks for the latest email, newest mail, recent message, or latest email content, treat that read request as approval to run one request-scoped live sync against already configured/enabled accounts before answering.",
+      "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations. Then report tray availability and ask before starting the compiled tray client.",
+      "If the user explicitly asks to install, start, or run the service on Windows, start the compiled tray client instead of starting only the raw HTTP server. The tray owns the long-running local HTTP agent service and its menu must not block on sync/status refresh.",
+      "Starting the tray is allowed only after user approval and must not turn on auto sync by itself.",
+      "After service or tray setup succeeds, keep the response short: tell the user NomadMail is available from the NomadInbox system tray and agents can use the local service. Do not print endpoint lists, raw health JSON, process tables, or search results unless diagnostics were requested.",
       "On non-Windows, do not install the Windows helper or offer Outlook Desktop sync. Explain that the NomadMail MCP server is still Node-based and can expose local JSONL context tools, while live sync requires PowerShell Core plus a supported provider runtime or a future native provider adapter.",
       "Never discover tokens, profiles, exports, connected accounts, or mailbox contents until the user approves the exact source and scope."
     ],
     mcpPortability: {
       serverRuntime: "Node.js MCP/HTTP service intended to start on any OS with Node.js.",
       platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_search_messages", "nomadmail_get_message"],
-      hostRuntimeTools: ["nomadmail_health_check", "nomadmail_list_providers", "nomadmail_list_accounts", "nomadmail_sync_once", "nomadmail_get_backup_status", "nomadmail_get_service_status", "nomadmail_start_service", "nomadmail_stop_service", "nomadmail_import_archive"],
+      hostRuntimeTools: ["nomadmail_health_check", "nomadmail_list_providers", "nomadmail_list_accounts", "nomadmail_sync_once", "nomadmail_get_latest_message", "nomadmail_get_backup_status", "nomadmail_get_service_status", "nomadmail_start_service", "nomadmail_stop_service", "nomadmail_import_archive"],
       hostRuntimeRequirement: "Provider sync and archive import currently delegate to the NomadInbox PowerShell core. Windows uses Windows PowerShell by default; non-Windows hosts need pwsh or a future native adapter.",
-      windowsOnlyCapabilities: ["Outlook Desktop COM sync", "system tray controller", "Windows PowerShell helper install"]
+      windowsOnlyCapabilities: ["Outlook Desktop COM sync", "compiled system tray client", "Windows PowerShell helper install"]
     },
     storageBoundary: {
       defaultDataDir: join(repoRoot, "data"),
@@ -292,7 +367,10 @@ function agentGuide() {
       msg: "MSG import is not implemented in this bootstrap. Convert to EML first."
     },
     liveSyncGuidance: [
+      "On Windows, offer the compiled tray client as a status and control surface after installing the helper. The compact tray menu can run Sync now, toggle auto sync, and show account status from cached state while refresh and sync run asynchronously. For new accounts, tell the user to ask an agent; the tray must not discover accounts or enable auto sync without approval.",
+      "For Windows service-start requests, start or verify the tray and give a short tray status instead of a raw HTTP endpoint report.",
       "Use nomadmail_list_accounts before syncing and verify that only intended accounts are enabled.",
+      "For latest-email questions, call nomadmail_get_latest_message with syncFirst=true, or run nomadmail_sync_once before searching live messages. If sync is blocked by disabled accounts, missing auth, or provider failure, say the latest email cannot be confirmed instead of presenting stale local data as definite.",
       "Use nomadmail_sync_once for request-driven sync, or nomadmail_start_service only when the user explicitly wants background sync.",
       "Gmail API sync requires NOMADINBOX_GMAIL_ACCESS_TOKEN or a Gmail-scoped gcloud login.",
       "Outlook Graph sync requires NOMADINBOX_GRAPH_ACCESS_TOKEN or an Azure CLI Microsoft Graph token.",
@@ -352,10 +430,71 @@ function runtimeInfo() {
     windowsHelperSupported: isWindows,
     outlookDesktopSupported: isWindows,
     mcpServerPortable: true,
+    timeContext: timeContext(),
     note: isWindows
       ? "Windows hosts can install the PowerShell helper, use Outlook Desktop COM, and run the tray controller."
       : "Non-Windows hosts can run the Node MCP server and local JSONL context tools. Provider sync/import needs pwsh or a future native adapter; Outlook Desktop and tray are Windows-only.",
   };
+}
+
+function timeContext() {
+  const resolved = Intl.DateTimeFormat().resolvedOptions();
+  const locale = process.env.NOMADINBOX_USER_LOCALE || process.env.NOMADINBOX_USER_CULTURE || resolved.locale || "en-US";
+  const timeZone = nodeUserTimeZone();
+  const now = new Date();
+  return {
+    locale,
+    timeZone,
+    windowsTimeZoneId: process.env.NOMADINBOX_USER_TIME_ZONE || null,
+    ianaTimeZoneId: process.env.NOMADINBOX_USER_TIME_ZONE_IANA || null,
+    nowUtc: now.toISOString(),
+    nowLocal: formatLocalTime(now.toISOString()),
+    parsingRule: "Parse ambiguous or relative user times in the user's locale/time zone, then persist UTC ISO 8601."
+  };
+}
+
+function nodeUserTimeZone() {
+  const resolved = Intl.DateTimeFormat().resolvedOptions();
+  for (const candidate of [process.env.NOMADINBOX_USER_TIME_ZONE_IANA, process.env.NOMADINBOX_USER_TIME_ZONE, resolved.timeZone, "UTC"]) {
+    if (!candidate) {
+      continue;
+    }
+    const normalizedCandidates = [candidate, windowsToIanaTimeZones.get(candidate)].filter(Boolean);
+    for (const normalized of normalizedCandidates) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: normalized }).format(new Date());
+        return normalized;
+      } catch {
+      }
+    }
+  }
+  return "UTC";
+}
+
+function formatLocalTime(value) {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+  const context = Intl.DateTimeFormat().resolvedOptions();
+  const locale = process.env.NOMADINBOX_USER_LOCALE || process.env.NOMADINBOX_USER_CULTURE || context.locale || "en-US";
+  const timeZone = nodeUserTimeZone();
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone,
+      timeZoneName: "short"
+    }).format(date);
+  } catch {
+    return date.toISOString();
+  }
 }
 
 function powershellExe() {
@@ -393,11 +532,11 @@ function parseJsonOutput(stdout) {
   }
 }
 
-function runCli(args) {
+function runPowerShellJson(filePath, args, unavailableName = "NomadInbox CLI") {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(
       powershellExe(),
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", cliPath, ...args],
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", filePath, ...args],
       {
         cwd: repoRoot,
         env: process.env,
@@ -414,7 +553,7 @@ function runCli(args) {
       stderr += chunk.toString("utf8");
     });
     child.on("error", (error) => {
-      const wrapped = new Error(`NomadInbox CLI is unavailable through ${powershellExe()}: ${error.message}`);
+      const wrapped = new Error(`${unavailableName} is unavailable through ${powershellExe()}: ${error.message}`);
       wrapped.details = {
         status: "unavailable",
         service: "NomadInbox",
@@ -439,7 +578,7 @@ function runCli(args) {
 
       if (code !== 0) {
         const detail = parsed || { status: "error", error: stderr.trim() || `Exited with code ${code}` };
-        const error = new Error(detail.error || `NomadInbox CLI exited with code ${code}`);
+        const error = new Error(detail.error || `${unavailableName} exited with code ${code}`);
         error.details = detail;
         reject(error);
         return;
@@ -448,6 +587,10 @@ function runCli(args) {
       resolvePromise(parsed);
     });
   });
+}
+
+function runCli(args) {
+  return runPowerShellJson(cliPath, args, "NomadInbox CLI");
 }
 
 async function safeRunCli(args) {
@@ -521,12 +664,34 @@ function summarizeMessage(record, sourceType) {
     from: record.from || null,
     to: record.to || [],
     receivedAt: record.receivedAt || null,
+    receivedAtLocal: formatLocalTime(record.receivedAt || record.sentAt || record.importedAt || ""),
     snippet: record.snippet || null,
     unread: Boolean(record.unread),
     flagged: Boolean(record.flagged),
     actionable: record.actionable !== false,
     capabilities: Array.isArray(record.capabilities) ? record.capabilities : [],
   };
+}
+
+function hasMessageContent(record) {
+  return [record.snippet, record.bodyText, record.bodyHtml]
+    .some((value) => typeof value === "string" && value.trim().length > 0);
+}
+
+function contentPreview(record) {
+  for (const value of [record.snippet, record.bodyText, record.bodyHtml]) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value.trim().slice(0, 600);
+    }
+  }
+  return null;
+}
+
+function syncCompleted(sync) {
+  if (!sync || sync.status !== "ok" || !Array.isArray(sync.results)) {
+    return false;
+  }
+  return sync.results.some((result) => ["ok", "completed"].includes(lower(result?.status || "")));
 }
 
 async function* readJsonLines(path) {
@@ -611,6 +776,71 @@ async function searchMessages(args = {}) {
   };
 }
 
+async function getLatestMessage(args = {}) {
+  const syncFirst = args.syncFirst !== false;
+  const requireContent = args.requireContent !== false;
+  const provider = lower(args.provider || "").trim();
+  const folder = lower(args.folder || "").trim();
+  const sync = syncFirst
+    ? await syncOnce({ accountId: args.accountId })
+    : { status: "skipped", service: "NomadMail", reason: "syncFirst=false" };
+
+  let latest = null;
+  let latestWithContent = null;
+
+  for await (const record of readJsonLines(messagesPath())) {
+    if (!record.id) {
+      continue;
+    }
+    if (provider && lower(record.provider) !== provider) {
+      continue;
+    }
+    if (folder && lower(record.folder) !== folder) {
+      continue;
+    }
+
+    if (!latest || messageTimestamp(record) > messageTimestamp(latest)) {
+      latest = record;
+    }
+    if (hasMessageContent(record) && (!latestWithContent || messageTimestamp(record) > messageTimestamp(latestWithContent))) {
+      latestWithContent = record;
+    }
+  }
+
+  const selected = requireContent ? latestWithContent : latest;
+  if (syncFirst && !syncCompleted(sync)) {
+    return {
+      status: "syncNotFresh",
+      service: "NomadMail",
+      syncFirst,
+      requireContent,
+      provider: provider || null,
+      folder: folder || null,
+      latestLiveSync: sync,
+      freshnessRule: "Latest-email questions must run one-shot live sync first. If sync cannot complete, do not present stale local data as definitely latest.",
+      message: null,
+      contentAvailable: false,
+      contentPreview: null,
+      reason: "No live account sync completed. The latest email cannot be confirmed from local state.",
+    };
+  }
+
+  return {
+    status: selected ? "ok" : "notFound",
+    service: "NomadMail",
+    syncFirst,
+    requireContent,
+    provider: provider || null,
+    folder: folder || null,
+    latestLiveSync: sync,
+    freshnessRule: "Latest-email questions must run one-shot live sync first. If sync cannot complete, do not present stale local data as definitely latest.",
+    message: selected ? summarizeMessage(selected, "live-sync") : null,
+    contentAvailable: selected ? hasMessageContent(selected) : false,
+    contentPreview: selected ? contentPreview(selected) : null,
+    latestLiveMessageWithoutContent: !selected && requireContent && latest ? summarizeMessage(latest, "live-sync") : null,
+  };
+}
+
 async function getMessage(args = {}) {
   if (!args.id || typeof args.id !== "string") {
     throw new Error("id is required");
@@ -651,6 +881,7 @@ async function healthCheck() {
     repoRoot,
     dataDir: dataDir(),
     runtime: runtimeInfo(),
+    timeContext: timeContext(),
     cliAvailable,
     config,
     providers: providers?.providers || [],
@@ -708,17 +939,17 @@ async function installWindowsHelper(args = {}) {
     );
   }
 
-  const cliArgs = ["install", "windows-helper"];
+  const installerArgs = [];
   if (args.dataDir) {
-    cliArgs.push("--data-dir", String(args.dataDir));
+    installerArgs.push("-DataDir", String(args.dataDir));
   }
   if (args.installRoot) {
-    cliArgs.push("--install-root", String(args.installRoot));
+    installerArgs.push("-InstallRoot", String(args.installRoot));
   }
   if (args.startTray) {
-    cliArgs.push("--start-tray");
+    installerArgs.push("-StartTray");
   }
-  return safeRunCli(cliArgs);
+  return runPowerShellJson(installerPath, installerArgs, "NomadInbox Windows helper installer");
 }
 
 async function callTool(name, args = {}) {
@@ -727,6 +958,8 @@ async function callTool(name, args = {}) {
       return agentGuide();
     case "nomadmail_get_startup_system_prompt":
       return startupSystemPrompt();
+    case "nomadmail_get_workspace_state":
+      return workspaceState();
     case "nomadmail_install_windows_helper":
       return installWindowsHelper(args);
     case "nomadmail_health_check":
@@ -739,6 +972,8 @@ async function callTool(name, args = {}) {
       return syncOnce(args);
     case "nomadmail_search_messages":
       return searchMessages(args);
+    case "nomadmail_get_latest_message":
+      return getLatestMessage(args);
     case "nomadmail_get_message":
       return getMessage(args);
     case "nomadmail_get_backup_status":
@@ -945,6 +1180,10 @@ async function handleHttp(req, res) {
       sendJson(res, 200, startupSystemPrompt());
       return;
     }
+    if (req.method === "GET" && url.pathname === "/workspace-state") {
+      sendJson(res, 200, workspaceState());
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/install/windows-helper") {
       sendJson(res, 200, await installWindowsHelper(await readBody(req)));
       return;
@@ -963,6 +1202,10 @@ async function handleHttp(req, res) {
     }
     if (req.method === "POST" && url.pathname === "/messages/sync") {
       sendJson(res, 200, await syncOnce(await readBody(req)));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/messages/latest") {
+      sendJson(res, 200, await getLatestMessage(await readBody(req)));
       return;
     }
     if (req.method === "GET" && url.pathname === "/service/status") {
@@ -1035,8 +1278,10 @@ function startHttp(port, host) {
 async function selfTest() {
   const providers = await safeRunCli(["providers", "list"]);
   const search = await searchMessages({ query: "", limit: 1 });
+  const latest = await getLatestMessage({ syncFirst: false });
   const guide = agentGuide();
   const prompt = startupSystemPrompt();
+  const state = workspaceState();
   return {
     status: "ok",
     service: "NomadMail",
@@ -1045,8 +1290,10 @@ async function selfTest() {
     cliAvailable: providers?.status !== "unavailable",
     providerCount: providers?.providers?.length || 0,
     searchStatus: search.status,
+    latestMessageStatus: latest.status,
     agentGuideStatus: guide.status,
     startupSystemPromptStatus: prompt.status,
+    workspaceStateStatus: state.status,
   };
 }
 
@@ -1056,6 +1303,10 @@ function parseArg(name, defaultValue) {
     return process.argv[idx + 1];
   }
   return defaultValue;
+}
+
+function hasArg(name) {
+  return process.argv.includes(name);
 }
 
 const mode = process.argv[2] || "mcp";
@@ -1079,9 +1330,24 @@ if (mode === "mcp") {
   process.stdout.write(`${JSON.stringify(agentGuide(), null, 2)}\n`);
 } else if (mode === "system-prompt") {
   process.stdout.write(`${JSON.stringify(startupSystemPrompt(), null, 2)}\n`);
+} else if (mode === "workspace-state") {
+  process.stdout.write(`${JSON.stringify(workspaceState(), null, 2)}\n`);
 } else if (mode === "tools") {
   process.stdout.write(`${JSON.stringify({ status: "ok", service: "NomadMail", tools }, null, 2)}\n`);
+} else if (mode === "install-windows-helper") {
+  installWindowsHelper({
+    dataDir: parseArg("--data-dir", ""),
+    installRoot: parseArg("--install-root", ""),
+    startTray: hasArg("--start-tray"),
+  })
+    .then((result) => {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    })
+    .catch((error) => {
+      process.stdout.write(`${JSON.stringify({ status: "error", service: "NomadMail", error: error.message }, null, 2)}\n`);
+      process.exitCode = 1;
+    });
 } else {
-  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|tools]\n");
+  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|workspace-state|tools|install-windows-helper]\n");
   process.exitCode = 2;
 }

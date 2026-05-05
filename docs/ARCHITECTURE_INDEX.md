@@ -21,8 +21,10 @@ C:\Users\prat\Documents\osm\NomadInbox
 | OpenAPI | `api/openapi/nomadinbox.v1.yaml` | Local HTTP service contract |
 | AsyncAPI | `api/asyncapi/nomadinbox-events.v1.yaml` | Local JSONL/event contract |
 | Governance | `docs/governance/` | Required architecture update workflow |
+| Workspace state | `docs/governance/WORKSPACE_STATE.md` | Living current-state file for agent session resume |
 | Schemas | `schemas/` | Agent-readable message/action contracts |
 | NomadMail service | `service/nomadmail-service.mjs` | MCP and local HTTP callable agent runtime |
+| Compiled tray client | `src/NomadInbox.Tray/` | Windows tray UI source; compiled to ignored `target/NomadInboxTray/NomadInboxTray.exe` |
 
 ## Required Update Rule
 
@@ -32,6 +34,12 @@ Preferred closeout:
 
 ```powershell
 .\scripts\session-closeout.ps1 -Title "Short change title" -Summary "What changed and why"
+```
+
+State-only refresh:
+
+```powershell
+.\scripts\update-workspace-state.ps1 -Title "Short state title" -Summary "Current state summary"
 ```
 
 Validation-only:

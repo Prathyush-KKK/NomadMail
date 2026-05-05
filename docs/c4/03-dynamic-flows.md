@@ -94,18 +94,26 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant User
-    participant Tray
+    participant Tray as Compiled Tray
+    participant Cache as Cached Status
+    participant HTTP as NomadMail HTTP
     participant CLI
     participant Worker
     participant Core
     participant Store
 
+    User->>Tray: Open tray menu
+    Tray->>Cache: Read cached in-memory/file status
+    Tray-->>User: Show menu immediately
     User->>Tray: Start background sync
-    Tray->>CLI: service start
+    Tray-->>User: Return menu control immediately
+    Tray->>HTTP: POST /service/start asynchronously
+    HTTP->>CLI: service start
     CLI->>Worker: launch user-session process
     Worker->>Core: sync once
     Core->>Store: write messages/actions/status
     User->>Tray: Show sync status
-    Tray->>CLI: service status
-    CLI-->>Tray: status JSON
+    Tray->>Cache: Render last cached state
+    Tray->>HTTP: GET /service/status asynchronously
+    HTTP-->>Tray: status JSON
 ```

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" role="img" aria-labelledby="title desc">
+  <title id="title">NomadInbox logo</title>
+  <desc id="desc">NomadInbox wordmark with the app mail-route mark.</desc>
+  <defs>
+    <linearGradient id="bg" x1="14" y1="14" x2="150" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#155e75"/>
+      <stop offset="0.55" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(14 14)">
+    <rect width="152" height="152" rx="34" fill="url(#bg)"/>
+    <path d="M42 48h68c9 0 16 7 16 16v44c0 9-7 16-16 16H42c-9 0-16-7-16-16V64c0-9 7-16 16-16Z" fill="#f8fafc"/>
+    <path d="M32 58l36 27c5 4 11 4 16 0l36-27" fill="none" stroke="#0f766e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M48 122c17 12 39 12 56 0" fill="none" stroke="#f59e0b" stroke-width="7" stroke-linecap="round" stroke-dasharray="1 14"/>
+    <circle cx="116" cy="116" r="12" fill="#f59e0b"/>
+    <circle cx="116" cy="116" r="5" fill="#111827"/>
+  </g>
+  <text x="196" y="96" fill="#111827" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="54" font-weight="700">Nomad</text>
+  <text x="391" y="96" fill="#0f766e" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="54" font-weight="700">Inbox</text>
+  <text x="199" y="132" fill="#475569" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="20" font-weight="500">local mail context for agents</text>
+</svg>

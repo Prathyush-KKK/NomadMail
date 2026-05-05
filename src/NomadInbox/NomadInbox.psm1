@@ -55,6 +55,7 @@ function Initialize-NomadInbox {
         importStatusPath = Get-NomadInboxImportStatusPath
         actionsPath = Get-NomadInboxActionsPath
         attachmentsDir = $attachmentsDir
+        timeContext = Get-NomadInboxTimeContext
     }
 }
 
@@ -120,6 +121,196 @@ function ConvertTo-NomadInboxSnippet {
     $clean = (($Value -replace '\s+', ' ').Trim())
     if ($clean.Length -le $MaxLength) { return $clean }
     return $clean.Substring(0, $MaxLength)
+}
+
+function Get-NomadInboxUserCulture {
+    $cultureName = if (-not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_USER_CULTURE)) {
+        $env:NOMADINBOX_USER_CULTURE
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_USER_LOCALE)) {
+        $env:NOMADINBOX_USER_LOCALE
+    } else {
+        ""
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($cultureName)) {
+        try {
+            return [System.Globalization.CultureInfo]::GetCultureInfo($cultureName)
+        } catch {
+        }
+    }
+
+    return [System.Globalization.CultureInfo]::CurrentCulture
+}
+
+function Resolve-NomadInboxTimeZoneCandidate {
+    param([string]$Candidate)
+
+    if ([string]::IsNullOrWhiteSpace($Candidate)) { return $null }
+
+    try {
+        return [System.TimeZoneInfo]::FindSystemTimeZoneById($Candidate)
+    } catch {
+    }
+
+    $aliases = @{
+        "Asia/Calcutta" = "India Standard Time"
+        "Asia/Kolkata" = "India Standard Time"
+        "India Standard Time" = "Asia/Kolkata"
+        "Etc/UTC" = "UTC"
+        "UTC" = "Etc/UTC"
+        "America/New_York" = "Eastern Standard Time"
+        "Eastern Standard Time" = "America/New_York"
+        "America/Chicago" = "Central Standard Time"
+        "Central Standard Time" = "America/Chicago"
+        "America/Denver" = "Mountain Standard Time"
+        "Mountain Standard Time" = "America/Denver"
+        "America/Los_Angeles" = "Pacific Standard Time"
+        "Pacific Standard Time" = "America/Los_Angeles"
+        "Europe/London" = "GMT Standard Time"
+        "GMT Standard Time" = "Europe/London"
+        "Europe/Berlin" = "W. Europe Standard Time"
+        "W. Europe Standard Time" = "Europe/Berlin"
+        "Asia/Tokyo" = "Tokyo Standard Time"
+        "Tokyo Standard Time" = "Asia/Tokyo"
+        "Asia/Shanghai" = "China Standard Time"
+        "China Standard Time" = "Asia/Shanghai"
+        "Australia/Sydney" = "AUS Eastern Standard Time"
+        "AUS Eastern Standard Time" = "Australia/Sydney"
+    }
+
+    if ($aliases.ContainsKey($Candidate)) {
+        try {
+            return [System.TimeZoneInfo]::FindSystemTimeZoneById($aliases[$Candidate])
+        } catch {
+        }
+    }
+
+    return $null
+}
+
+function Get-NomadInboxUserTimeZone {
+    foreach ($candidate in @($env:NOMADINBOX_USER_TIME_ZONE, $env:NOMADINBOX_USER_TIME_ZONE_IANA)) {
+        $timeZone = Resolve-NomadInboxTimeZoneCandidate $candidate
+        if ($null -ne $timeZone) { return $timeZone }
+    }
+
+    return [System.TimeZoneInfo]::Local
+}
+
+function Get-NomadInboxUtcNowIso {
+    return ([datetimeoffset]::UtcNow.UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture))
+}
+
+function Test-NomadInboxHasExplicitTimeZone {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    return ($Value -match '(?i)(Z|[+-]\d{2}:?\d{2})\s*(\)|$)' -or $Value -match '(?i)\b(UT|UTC|GMT|EST|EDT|CST|CDT|MST|MDT|PST|PDT)\b')
+}
+
+function ConvertTo-NomadInboxUtcDateTimeOffsetFromDateTime {
+    param([datetime]$Value)
+
+    if ($Value.Kind -eq [System.DateTimeKind]::Utc) {
+        return (New-Object System.DateTimeOffset -ArgumentList $Value)
+    }
+    if ($Value.Kind -eq [System.DateTimeKind]::Local) {
+        return (New-Object System.DateTimeOffset -ArgumentList $Value).ToUniversalTime()
+    }
+
+    $timeZone = Get-NomadInboxUserTimeZone
+    $unspecified = [datetime]::SpecifyKind($Value, [System.DateTimeKind]::Unspecified)
+    try {
+        $utc = [System.TimeZoneInfo]::ConvertTimeToUtc($unspecified, $timeZone)
+        return (New-Object System.DateTimeOffset -ArgumentList $utc)
+    } catch {
+        return (New-Object System.DateTimeOffset -ArgumentList $Value).ToUniversalTime()
+    }
+}
+
+function ConvertTo-NomadInboxUtcDateTimeOffset {
+    param([string]$Value, [switch]$UseNowFallback)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        if ($UseNowFallback) { return [datetimeoffset]::UtcNow }
+        throw "Date/time value is empty."
+    }
+
+    $culture = Get-NomadInboxUserCulture
+    $invariant = [System.Globalization.CultureInfo]::InvariantCulture
+    $allowWhiteSpace = [System.Globalization.DateTimeStyles]::AllowWhiteSpaces
+
+    if (Test-NomadInboxHasExplicitTimeZone $Value) {
+        foreach ($provider in @($culture, $invariant)) {
+            $offset = [datetimeoffset]::MinValue
+            if ([datetimeoffset]::TryParse($Value, $provider, $allowWhiteSpace, [ref]$offset)) {
+                return $offset.ToUniversalTime()
+            }
+        }
+    }
+
+    foreach ($provider in @($culture, $invariant)) {
+        $dateTime = [datetime]::MinValue
+        if ([datetime]::TryParse($Value, $provider, $allowWhiteSpace, [ref]$dateTime)) {
+            return ConvertTo-NomadInboxUtcDateTimeOffsetFromDateTime $dateTime
+        }
+    }
+
+    $assumeLocal = $allowWhiteSpace -bor [System.Globalization.DateTimeStyles]::AssumeLocal
+    foreach ($provider in @($culture, $invariant)) {
+        $offset = [datetimeoffset]::MinValue
+        if ([datetimeoffset]::TryParse($Value, $provider, $assumeLocal, [ref]$offset)) {
+            return $offset.ToUniversalTime()
+        }
+    }
+
+    if ($UseNowFallback) { return [datetimeoffset]::UtcNow }
+    throw "Unable to parse date/time using user locale '$($culture.Name)' and time zone '$((Get-NomadInboxUserTimeZone).Id)': $Value"
+}
+
+function ConvertTo-NomadInboxUtcIsoFromDateTime {
+    param([datetime]$Value)
+    return ((ConvertTo-NomadInboxUtcDateTimeOffsetFromDateTime $Value).UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture))
+}
+
+function ConvertTo-NomadInboxIsoDate {
+    param([string]$Value)
+    $offset = ConvertTo-NomadInboxUtcDateTimeOffset -Value $Value -UseNowFallback
+    return $offset.UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function ConvertTo-NomadInboxLocalTimeText {
+    param([string]$Value, [string]$Fallback = "Not recorded")
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $Fallback }
+    try {
+        $utc = ConvertTo-NomadInboxUtcDateTimeOffset -Value $Value
+        $culture = Get-NomadInboxUserCulture
+        $timeZone = Get-NomadInboxUserTimeZone
+        $local = [System.TimeZoneInfo]::ConvertTime($utc, $timeZone)
+        return ("{0} ({1})" -f $local.ToString("g", $culture), $timeZone.StandardName)
+    } catch {
+        return [string]$Value
+    }
+}
+
+function Get-NomadInboxTimeContext {
+    $culture = Get-NomadInboxUserCulture
+    $timeZone = Get-NomadInboxUserTimeZone
+    $nowUtc = [datetimeoffset]::UtcNow
+    $nowLocal = [System.TimeZoneInfo]::ConvertTime($nowUtc, $timeZone)
+
+    [pscustomobject]@{
+        cultureName = $culture.Name
+        cultureDisplayName = $culture.DisplayName
+        timeZoneId = $timeZone.Id
+        timeZoneDisplayName = $timeZone.DisplayName
+        requestedWindowsTimeZoneId = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_USER_TIME_ZONE)) { $null } else { $env:NOMADINBOX_USER_TIME_ZONE }
+        requestedIanaTimeZoneId = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_USER_TIME_ZONE_IANA)) { $null } else { $env:NOMADINBOX_USER_TIME_ZONE_IANA }
+        utcOffset = $nowLocal.Offset.ToString()
+        nowLocal = $nowLocal.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+        nowUtc = $nowUtc.UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+        parsingRule = "Ambiguous date/time strings are parsed with the user culture and user time zone, then stored as UTC ISO 8601."
+    }
 }
 
 function Initialize-NomadInboxAccountsConfig {
@@ -222,6 +413,7 @@ function Get-NomadInboxConfigStatus {
         outlookDesktopProfile = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_OUTLOOK_DESKTOP_PROFILE)) { "default" } else { $env:NOMADINBOX_OUTLOOK_DESKTOP_PROFILE }
         localConfigExpected = Join-Path (Get-NomadInboxRoot) "config\nomad-inbox.ps1"
         localConfigExists = Test-Path -LiteralPath (Join-Path (Get-NomadInboxRoot) "config\nomad-inbox.ps1")
+        timeContext = Get-NomadInboxTimeContext
     }
 }
 
@@ -234,7 +426,8 @@ function Read-NomadInboxSyncStatus {
             lastRunAt = $null
             nextRunAt = $null
             accounts = @()
-            updatedAt = (Get-Date).ToUniversalTime().ToString("o")
+            updatedAt = Get-NomadInboxUtcNowIso
+            timeContext = Get-NomadInboxTimeContext
         }
     }
     $raw = Get-Content -LiteralPath $path -Raw
@@ -261,7 +454,7 @@ function Write-NomadInboxActionRecord {
     $provider = if ($InputObject.ContainsKey("provider")) { $InputObject.provider } else { "sample" }
     $record = [pscustomobject]@{
         actionId = [guid]::NewGuid().ToString()
-        timestamp = (Get-Date).ToUniversalTime().ToString("o")
+        timestamp = Get-NomadInboxUtcNowIso
         provider = $provider
         messageId = $null
         draftId = $null
@@ -292,8 +485,8 @@ function New-NomadInboxSyncResult {
         status = $Status
         reason = $Reason
         synced = $Synced
-        startedAt = $StartedAt.ToUniversalTime().ToString("o")
-        finishedAt = (Get-Date).ToUniversalTime().ToString("o")
+        startedAt = ConvertTo-NomadInboxUtcIsoFromDateTime $StartedAt
+        finishedAt = Get-NomadInboxUtcNowIso
     }
 }
 
@@ -330,8 +523,8 @@ function New-NomadInboxLiveMessage {
         from = $From
         to = @($To)
         cc = @($Cc)
-        receivedAt = if ([string]::IsNullOrWhiteSpace($ReceivedAt)) { (Get-Date).ToUniversalTime().ToString("o") } else { $ReceivedAt }
-        sentAt = if ([string]::IsNullOrWhiteSpace($SentAt)) { $null } else { $SentAt }
+        receivedAt = if ([string]::IsNullOrWhiteSpace($ReceivedAt)) { Get-NomadInboxUtcNowIso } else { ConvertTo-NomadInboxIsoDate $ReceivedAt }
+        sentAt = if ([string]::IsNullOrWhiteSpace($SentAt)) { $null } else { ConvertTo-NomadInboxIsoDate $SentAt }
         snippet = ConvertTo-NomadInboxSnippet $Snippet
         bodyText = $null
         bodyHtml = $null
@@ -547,8 +740,8 @@ function Invoke-NomadInboxOutlookGraphSync {
 
 function ConvertFrom-NomadInboxOutlookDesktopItem {
     param($Item, $Account)
-    $receivedAt = if ($Item.ReceivedTime) { ([datetime]$Item.ReceivedTime).ToUniversalTime().ToString("o") } else { (Get-Date).ToUniversalTime().ToString("o") }
-    $sentAt = if ($Item.SentOn) { ([datetime]$Item.SentOn).ToUniversalTime().ToString("o") } else { $null }
+    $receivedAt = if ($Item.ReceivedTime) { ConvertTo-NomadInboxUtcIsoFromDateTime ([datetime]$Item.ReceivedTime) } else { Get-NomadInboxUtcNowIso }
+    $sentAt = if ($Item.SentOn) { ConvertTo-NomadInboxUtcIsoFromDateTime ([datetime]$Item.SentOn) } else { $null }
     $entryId = if ($Item.EntryID) { [string]$Item.EntryID } else { ConvertTo-NomadInboxHash ([string]$Item.Subject + [string]$receivedAt) }
     $senderEmail = if ($Item.SenderEmailAddress) { [string]$Item.SenderEmailAddress } else { "unknown@example.invalid" }
     $senderName = if ($Item.SenderName) { [string]$Item.SenderName } else { $null }
@@ -609,14 +802,14 @@ function Invoke-NomadInboxOutlookDesktopSync {
 
 function Invoke-NomadInboxAccountSync {
     param($Account)
-    $startedAt = (Get-Date).ToUniversalTime()
+    $startedAt = [datetime]::UtcNow
     if (-not [bool]$Account.enabled) {
         return New-NomadInboxSyncResult -Account $Account -Status "skipped" -Reason "accountDisabled" -Synced 0 -StartedAt $startedAt
     }
 
     if ($Account.provider -eq "sample") {
         $sample = New-NomadInboxSampleMessage
-        $sample.id = "sample:" + $Account.id + ":" + (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss")
+        $sample.id = "sample:" + $Account.id + ":" + ([datetimeoffset]::UtcNow.UtcDateTime.ToString("yyyyMMddHHmmss", [System.Globalization.CultureInfo]::InvariantCulture))
         Write-NomadInboxLiveMessages -Records @($sample)
         Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider } -ResultObject @{ synced = 1 } -ErrorMessage $null | Out-Null
         return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced 1 -StartedAt $startedAt
@@ -658,16 +851,17 @@ function Invoke-NomadInboxSyncOnce {
         if ($accounts.Count -eq 0) { throw "Account not found: $AccountId" }
     }
     $results = @($accounts | ForEach-Object { Invoke-NomadInboxAccountSync $_ })
-    $now = (Get-Date).ToUniversalTime()
+    $now = [datetimeoffset]::UtcNow
     $enabledIntervals = @($accounts | Where-Object { [bool]$_.enabled } | ForEach-Object { if ($_.intervalSeconds) { [int]$_.intervalSeconds } elseif ($config.defaultIntervalSeconds) { [int]$config.defaultIntervalSeconds } else { 300 } })
     $interval = if ($enabledIntervals.Count -gt 0) { ($enabledIntervals | Measure-Object -Minimum).Minimum } elseif ($config.defaultIntervalSeconds) { [int]$config.defaultIntervalSeconds } else { 300 }
     $status = [pscustomobject]@{
         service = $script:ServiceName
         worker = if ($WorkerRunning -or (Test-NomadInboxWorkerRunning)) { "running" } else { "stopped" }
-        lastRunAt = $now.ToString("o")
-        nextRunAt = $now.AddSeconds($interval).ToString("o")
+        lastRunAt = $now.UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+        nextRunAt = $now.AddSeconds($interval).UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
         accounts = $results
-        updatedAt = $now.ToString("o")
+        updatedAt = $now.UtcDateTime.ToString("o", [System.Globalization.CultureInfo]::InvariantCulture)
+        timeContext = Get-NomadInboxTimeContext
     }
     Write-NomadInboxSyncStatus $status | Out-Null
     [pscustomobject]@{
@@ -676,6 +870,7 @@ function Invoke-NomadInboxSyncOnce {
         accountCount = $results.Count
         results = $results
         statusPath = Get-NomadInboxStatusPath
+        timeContext = Get-NomadInboxTimeContext
     }
 }
 
@@ -694,6 +889,7 @@ function Get-NomadInboxServiceStatus {
         pidPath = $pidPath
         statusPath = Get-NomadInboxStatusPath
         logPath = Get-NomadInboxWorkerLogPath
+        timeContext = Get-NomadInboxTimeContext
         syncStatus = Read-NomadInboxSyncStatus
         backupStatus = Get-NomadInboxBackupStatus
     }
@@ -738,7 +934,7 @@ function Stop-NomadInboxService {
     $status = Read-NomadInboxSyncStatus
     if ($null -ne $status) {
         $status.worker = "stopped"
-        $status.updatedAt = (Get-Date).ToUniversalTime().ToString("o")
+        $status.updatedAt = Get-NomadInboxUtcNowIso
         Write-NomadInboxSyncStatus $status | Out-Null
     }
     [pscustomobject]@{
@@ -772,7 +968,8 @@ function Read-NomadInboxImportStatus {
             importedMessages = 0
             skippedMessages = 0
             warnings = @()
-            updatedAt = (Get-Date).ToUniversalTime().ToString("o")
+            updatedAt = Get-NomadInboxUtcNowIso
+            timeContext = Get-NomadInboxTimeContext
         }
     }
     $raw = Get-Content -LiteralPath $path -Raw
@@ -807,10 +1004,10 @@ function Get-NomadInboxBackupStatus {
         $prompts += "Imported archive mail is read-only by design. It can improve search and summaries, but actions still require a live synced provider message."
     }
     if ($null -ne $syncStatus -and $syncStatus.lastRunAt) {
-        $prompts += "Last live sync ran at $($syncStatus.lastRunAt). Run 'sync once' or enable background sync to keep this fresher."
+        $prompts += "Last live sync ran at $(ConvertTo-NomadInboxLocalTimeText $syncStatus.lastRunAt). Run 'sync once' or enable background sync to keep this fresher."
     }
     if ($null -ne $importStatus -and $importStatus.lastImportAt) {
-        $prompts += "Last archive import ran at $($importStatus.lastImportAt) from $($importStatus.lastSource). Re-run import when you export more historical mail."
+        $prompts += "Last archive import ran at $(ConvertTo-NomadInboxLocalTimeText $importStatus.lastImportAt) from $($importStatus.lastSource). Re-run import when you export more historical mail."
     }
 
     [pscustomobject]@{
@@ -826,7 +1023,8 @@ function Get-NomadInboxBackupStatus {
         syncStatus = $syncStatus
         importStatus = $importStatus
         userPrompts = $prompts
-        updatedAt = (Get-Date).ToUniversalTime().ToString("o")
+        updatedAt = Get-NomadInboxUtcNowIso
+        timeContext = Get-NomadInboxTimeContext
     }
 }
 
@@ -873,18 +1071,6 @@ function ConvertTo-NomadInboxAddressList {
     param([string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
     return @($Value -split ',' | ForEach-Object { ConvertTo-NomadInboxAddress $_ })
-}
-
-function ConvertTo-NomadInboxIsoDate {
-    param([string]$Value)
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return (Get-Date).ToUniversalTime().ToString("o")
-    }
-    try {
-        return ([datetimeoffset]::Parse($Value)).UtcDateTime.ToString("o")
-    } catch {
-        return (Get-Date).ToUniversalTime().ToString("o")
-    }
 }
 
 function ConvertFrom-NomadInboxRfc822Message {
@@ -939,7 +1125,7 @@ function ConvertFrom-NomadInboxRfc822Message {
         sourcePathHash = $SourcePathHash
         importBatchId = $ImportBatchId
         actionable = $false
-        importedAt = (Get-Date).ToUniversalTime().ToString("o")
+        importedAt = Get-NomadInboxUtcNowIso
         searchableText = $searchText
     }
 }
@@ -954,7 +1140,7 @@ function ConvertTo-NomadInboxArchiveRecordFromObject {
     )
     $subject = if ($InputObject.subject) { [string]$InputObject.subject } else { "(no subject)" }
     $providerMessageId = if ($InputObject.providerMessageId) { [string]$InputObject.providerMessageId } elseif ($InputObject.id) { [string]$InputObject.id } else { ConvertTo-NomadInboxHash ($InputObject | ConvertTo-Json -Depth 20 -Compress) }
-    $receivedAt = if ($InputObject.receivedAt) { ConvertTo-NomadInboxIsoDate ([string]$InputObject.receivedAt) } else { (Get-Date).ToUniversalTime().ToString("o") }
+    $receivedAt = if ($InputObject.receivedAt) { ConvertTo-NomadInboxIsoDate ([string]$InputObject.receivedAt) } else { Get-NomadInboxUtcNowIso }
     $body = if ($InputObject.bodyText) { [string]$InputObject.bodyText } elseif ($InputObject.snippet) { [string]$InputObject.snippet } else { "" }
     $id = "archive:" + (ConvertTo-NomadInboxHash "$SourceProvider|$providerMessageId|$receivedAt|$subject").Substring(0, 32)
 
@@ -985,7 +1171,7 @@ function ConvertTo-NomadInboxArchiveRecordFromObject {
         sourcePathHash = $SourcePathHash
         importBatchId = $ImportBatchId
         actionable = $false
-        importedAt = (Get-Date).ToUniversalTime().ToString("o")
+        importedAt = Get-NomadInboxUtcNowIso
         searchableText = ConvertTo-NomadInboxSearchText ($subject + " " + $body)
     }
 }
@@ -1027,7 +1213,7 @@ function Import-NomadInboxArchive {
     $resolvedPath = Resolve-NomadInboxPath $Path
     if (-not (Test-Path -LiteralPath $resolvedPath)) { throw "Import path not found: $resolvedPath" }
     $formatValue = $Format.ToLowerInvariant()
-    $batchId = "import-" + (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmss") + "-" + ([guid]::NewGuid().ToString("n").Substring(0, 8))
+    $batchId = "import-" + ([datetimeoffset]::UtcNow.UtcDateTime.ToString("yyyyMMddHHmmss", [System.Globalization.CultureInfo]::InvariantCulture)) + "-" + ([guid]::NewGuid().ToString("n").Substring(0, 8))
     $sourceHash = ConvertTo-NomadInboxHash $resolvedPath
     $records = @()
     $warnings = @()
@@ -1087,7 +1273,7 @@ function Import-NomadInboxArchive {
     }
 
     Write-NomadInboxArchiveRecords -Records $records -DryRun:$DryRun
-    $now = (Get-Date).ToUniversalTime().ToString("o")
+    $now = Get-NomadInboxUtcNowIso
     $status = [pscustomobject]@{
         service = $script:ServiceName
         status = if ($DryRun) { "dryRun" } else { "ok" }
@@ -1099,6 +1285,7 @@ function Import-NomadInboxArchive {
         skippedMessages = $warnings.Count
         warnings = $warnings
         updatedAt = $now
+        timeContext = Get-NomadInboxTimeContext
     }
     if (-not $DryRun) {
         Write-NomadInboxImportStatus $status | Out-Null
@@ -1117,6 +1304,7 @@ function Import-NomadInboxArchive {
         archiveMessagesPath = Get-NomadInboxArchiveMessagesPath
         archiveIndexPath = Get-NomadInboxArchiveIndexPath
         warnings = $warnings
+        timeContext = Get-NomadInboxTimeContext
         userPrompt = "Imported archive messages are read-only context. Use live sync for actions, and run 'backup status' to see how much mail context is backed up."
     }
 }
@@ -1144,6 +1332,7 @@ function Test-NomadInbox {
         version = $script:Version
         root = $root
         missing = $missing
+        timeContext = Get-NomadInboxTimeContext
         config = Get-NomadInboxConfigStatus
     }
 }
@@ -1170,7 +1359,7 @@ function New-NomadInboxSampleMessage {
         from = [pscustomobject]@{ name = "NomadInbox"; email = "hello@example.com" }
         to = @([pscustomobject]@{ name = "Example User"; email = "user@example.com" })
         cc = @()
-        receivedAt = (Get-Date).ToUniversalTime().ToString("o")
+        receivedAt = Get-NomadInboxUtcNowIso
         sentAt = $null
         snippet = "This is a redacted sample message for schema testing."
         bodyText = "This sample proves the agent-readable message contract without using real mailbox data."
@@ -1192,4 +1381,5 @@ Export-ModuleMember -Function `
     Get-NomadInboxServiceStatus, Start-NomadInboxService, Stop-NomadInboxService, `
     Read-NomadInboxSyncStatus, Test-NomadInboxWorkerRunning, Get-NomadInboxWorkerLogPath, `
     Import-NomadInboxArchive, Read-NomadInboxImportStatus, Get-NomadInboxBackupStatus, `
-    ConvertTo-NomadInboxOptions, Get-NomadInboxOption, Require-NomadInboxOption
+    ConvertTo-NomadInboxOptions, Get-NomadInboxOption, Require-NomadInboxOption, `
+    Get-NomadInboxTimeContext, ConvertTo-NomadInboxLocalTimeText

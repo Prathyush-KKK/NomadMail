@@ -14,6 +14,10 @@ Import historical mail exports into NomadInbox as read-only context. This enrich
 
 PST and MSG import are planned. For now, export or convert those messages to EML, or use the live Outlook Desktop/Graph provider.
 
+## Time Parsing
+
+Archive imports parse ambiguous `Date`, `receivedAt`, and `sentAt` values with the user's locale and time zone before storing UTC ISO timestamps. Set `NOMADINBOX_USER_CULTURE` or `NOMADINBOX_USER_LOCALE` and `NOMADINBOX_USER_TIME_ZONE` or `NOMADINBOX_USER_TIME_ZONE_IANA` before import when a backup belongs to a specific locale/time zone.
+
 ## Dry Run
 
 ```powershell

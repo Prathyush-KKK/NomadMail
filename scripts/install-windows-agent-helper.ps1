@@ -86,8 +86,22 @@ $state = [pscustomobject]@{
 }
 $state | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $statusPath -Encoding UTF8
 
+$trayStartResult = $null
 if ($StartTray) {
-    Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1")) -WorkingDirectory $repoRoot | Out-Null
+    $previousTrayDataDir = $env:NOMADINBOX_DATA_DIR
+    $env:NOMADINBOX_DATA_DIR = $resolvedDataDir
+    try {
+        $trayStartText = & $cli tray start
+        if (-not [string]::IsNullOrWhiteSpace(($trayStartText | Out-String))) {
+            $trayStartResult = ($trayStartText | Out-String | ConvertFrom-Json)
+        }
+    } finally {
+        if ($null -eq $previousTrayDataDir) {
+            Remove-Item Env:\NOMADINBOX_DATA_DIR -ErrorAction SilentlyContinue
+        } else {
+            $env:NOMADINBOX_DATA_DIR = $previousTrayDataDir
+        }
+    }
 }
 
 [pscustomobject]@{
@@ -100,4 +114,6 @@ if ($StartTray) {
     dataDir = $resolvedDataDir
     accountsConfigPath = $accountsConfigPath
     trayStarted = [bool]$StartTray
+    trayStatus = if ($trayStartResult) { $trayStartResult.tray } else { $null }
+    trayPid = if ($trayStartResult) { $trayStartResult.pid } else { $null }
 } | ConvertTo-Json -Depth 20

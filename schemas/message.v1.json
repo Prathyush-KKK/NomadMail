@@ -14,8 +14,8 @@
     "from": { "$ref": "#/$defs/address" },
     "to": { "type": "array", "items": { "$ref": "#/$defs/address" } },
     "cc": { "type": "array", "items": { "$ref": "#/$defs/address" } },
-    "receivedAt": { "type": "string", "format": "date-time" },
-    "sentAt": { "type": ["string", "null"] },
+    "receivedAt": { "type": "string", "format": "date-time", "description": "UTC ISO 8601 timestamp. Ambiguous source times are parsed with the user's locale and time zone before storage." },
+    "sentAt": { "type": ["string", "null"], "description": "UTC ISO 8601 timestamp when available." },
     "snippet": { "type": ["string", "null"] },
     "bodyText": { "type": ["string", "null"] },
     "bodyHtml": { "type": ["string", "null"] },
@@ -37,7 +37,7 @@
     "sourcePathHash": { "type": ["string", "null"] },
     "importBatchId": { "type": ["string", "null"] },
     "actionable": { "type": "boolean", "default": true },
-    "importedAt": { "type": ["string", "null"], "format": "date-time" }
+    "importedAt": { "type": ["string", "null"], "format": "date-time", "description": "UTC ISO 8601 import timestamp." }
   },
   "$defs": {
     "address": {

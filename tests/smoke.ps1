@@ -3,6 +3,10 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $cli = Join-Path $repoRoot "scripts\nomad-inbox.ps1"
 $previousDataDir = $env:NOMADINBOX_DATA_DIR
+$previousUserCulture = $env:NOMADINBOX_USER_CULTURE
+$previousUserLocale = $env:NOMADINBOX_USER_LOCALE
+$previousUserTimeZone = $env:NOMADINBOX_USER_TIME_ZONE
+$previousUserTimeZoneIana = $env:NOMADINBOX_USER_TIME_ZONE_IANA
 $tempBase = if ([string]::IsNullOrWhiteSpace($env:TEMP)) { Join-Path $env:USERPROFILE "AppData\Local\Temp" } else { $env:TEMP }
 $testRoot = Join-Path $tempBase ("nomadinbox-smoke-" + [guid]::NewGuid().ToString("n"))
 New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
@@ -22,6 +26,12 @@ try {
     $install = & $cli install windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $installRoot | ConvertFrom-Json
     if ($install.status -ne "ok" -or -not (Test-Path -LiteralPath $install.helperPath) -or -not (Test-Path -LiteralPath $install.statusPath)) {
         throw "windows helper install failed"
+    }
+
+    $nodeInstallRoot = Join-Path $testRoot "agent-helper-node"
+    $nodeInstall = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") install-windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $nodeInstallRoot | ConvertFrom-Json
+    if ($nodeInstall.status -ne "ok" -or -not (Test-Path -LiteralPath $nodeInstall.helperPath) -or -not (Test-Path -LiteralPath $nodeInstall.statusPath)) {
+        throw "node helper install command failed"
     }
 
     $singleSync = & $cli sync once --account-id personal-gmail | ConvertFrom-Json
@@ -55,30 +65,109 @@ This sample validates archive ingestion without using real mailbox exports.
         throw "archive import failed"
     }
 
+    $env:NOMADINBOX_USER_CULTURE = "en-IN"
+    Remove-Item Env:\NOMADINBOX_USER_LOCALE -ErrorAction SilentlyContinue
+    Remove-Item Env:\NOMADINBOX_USER_TIME_ZONE_IANA -ErrorAction SilentlyContinue
+    $env:NOMADINBOX_USER_TIME_ZONE = "UTC"
+    $localeJsonlPath = Join-Path $testRoot "locale-date.jsonl"
+    [pscustomobject]@{
+        id = "locale-date-1"
+        providerMessageId = "locale-date-1"
+        subject = "Locale date parse"
+        from = [pscustomobject]@{ email = "sender@example.com" }
+        receivedAt = "05/06/2026 15:30"
+        snippet = "Locale-specific date parsing check."
+    } | ConvertTo-Json -Compress | Set-Content -LiteralPath $localeJsonlPath -Encoding UTF8
+
+    $localeImport = & $cli import jsonl --path $localeJsonlPath --source smoke-locale --max-messages 1 | ConvertFrom-Json
+    if ($localeImport.status -ne "ok" -or -not $localeImport.timeContext -or $localeImport.timeContext.cultureName -ne "en-IN") {
+        throw "locale-aware import status failed"
+    }
+    $localeRecord = [System.IO.File]::ReadAllLines((Join-Path $env:NOMADINBOX_DATA_DIR "archive-messages.jsonl")) |
+        ForEach-Object { $_ | ConvertFrom-Json } |
+        Where-Object { $_.subject -eq "Locale date parse" } |
+        Select-Object -First 1
+    if ($null -eq $localeRecord -or $localeRecord.receivedAt -notlike "2026-06-05T15:30*Z") {
+        throw "locale-aware date parsing failed"
+    }
+
+    $env:NOMADINBOX_USER_TIME_ZONE = "India Standard Time"
+    $localeIndiaJsonlPath = Join-Path $testRoot "locale-india-date.jsonl"
+    [pscustomobject]@{
+        id = "locale-india-date-1"
+        providerMessageId = "locale-india-date-1"
+        subject = "Locale India time zone parse"
+        from = [pscustomobject]@{ email = "sender@example.com" }
+        receivedAt = "05/06/2026 15:30"
+        snippet = "Locale-specific time zone conversion check."
+    } | ConvertTo-Json -Compress | Set-Content -LiteralPath $localeIndiaJsonlPath -Encoding UTF8
+
+    $localeIndiaImport = & $cli import jsonl --path $localeIndiaJsonlPath --source smoke-locale-india --max-messages 1 | ConvertFrom-Json
+    if ($localeIndiaImport.status -ne "ok" -or -not $localeIndiaImport.timeContext -or $localeIndiaImport.timeContext.timeZoneId -notin @("India Standard Time", "Asia/Kolkata", "Asia/Calcutta")) {
+        throw "locale-aware time zone import status failed"
+    }
+    $localeIndiaRecord = [System.IO.File]::ReadAllLines((Join-Path $env:NOMADINBOX_DATA_DIR "archive-messages.jsonl")) |
+        ForEach-Object { $_ | ConvertFrom-Json } |
+        Where-Object { $_.subject -eq "Locale India time zone parse" } |
+        Select-Object -First 1
+    if ($null -eq $localeIndiaRecord -or $localeIndiaRecord.receivedAt -notlike "2026-06-05T10:00*Z") {
+        throw "locale-aware time zone conversion failed"
+    }
+
     $agentService = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") self-test | ConvertFrom-Json
-    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 9 -or $agentService.agentGuideStatus -ne "ok") {
+    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or -not $agentService.latestMessageStatus) {
         throw "agent service self-test failed"
     }
 
+    $tools = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") tools | ConvertFrom-Json
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_latest_message" }).Count -ne 1) {
+        throw "latest message tool missing"
+    }
+
     $agentGuide = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-guide | ConvertFrom-Json
-    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.startupSystemPrompt.text) {
+    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*")) {
         throw "agent guide failed"
     }
 
     $systemPrompt = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") system-prompt | ConvertFrom-Json
-    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*Your first response must show*") {
+    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*Your first response must show*" -or $systemPrompt.text -notlike "*Windows helper and tray status*" -or $systemPrompt.text -notlike "*runtime/agent-scratch*" -or $systemPrompt.text -notlike "*MCP stdio tools are launched by each calling agent*" -or $systemPrompt.text -notlike "*Do not dump endpoint lists*" -or $systemPrompt.text -notlike "*user's locale and time zone*" -or $systemPrompt.text -notlike "*latest email*") {
         throw "startup system prompt failed"
+    }
+
+    $workspaceState = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") workspace-state | ConvertFrom-Json
+    if ($workspaceState.status -ne "ok" -or $workspaceState.text -notlike "*NomadInbox Workspace State*" -or $workspaceState.text -notlike "*Resume Rules For Agents*") {
+        throw "workspace state failed"
     }
 
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "agent service self-test", "agent guide", "startup system prompt")
+        tests = @("doctor", "providers list", "accounts list", "install windows helper", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "agent guide", "startup system prompt", "workspace state")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {
         Remove-Item Env:\NOMADINBOX_DATA_DIR -ErrorAction SilentlyContinue
     } else {
         $env:NOMADINBOX_DATA_DIR = $previousDataDir
+    }
+    if ($null -eq $previousUserCulture) {
+        Remove-Item Env:\NOMADINBOX_USER_CULTURE -ErrorAction SilentlyContinue
+    } else {
+        $env:NOMADINBOX_USER_CULTURE = $previousUserCulture
+    }
+    if ($null -eq $previousUserLocale) {
+        Remove-Item Env:\NOMADINBOX_USER_LOCALE -ErrorAction SilentlyContinue
+    } else {
+        $env:NOMADINBOX_USER_LOCALE = $previousUserLocale
+    }
+    if ($null -eq $previousUserTimeZone) {
+        Remove-Item Env:\NOMADINBOX_USER_TIME_ZONE -ErrorAction SilentlyContinue
+    } else {
+        $env:NOMADINBOX_USER_TIME_ZONE = $previousUserTimeZone
+    }
+    if ($null -eq $previousUserTimeZoneIana) {
+        Remove-Item Env:\NOMADINBOX_USER_TIME_ZONE_IANA -ErrorAction SilentlyContinue
+    } else {
+        $env:NOMADINBOX_USER_TIME_ZONE_IANA = $previousUserTimeZoneIana
     }
     Set-Location $repoRoot
     try {

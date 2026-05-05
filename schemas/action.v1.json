@@ -6,7 +6,7 @@
   "required": ["actionId", "timestamp", "provider", "actionType", "status"],
   "properties": {
     "actionId": { "type": "string" },
-    "timestamp": { "type": "string", "format": "date-time" },
+    "timestamp": { "type": "string", "format": "date-time", "description": "UTC ISO 8601 action timestamp; user-facing displays should convert to the user's locale and time zone." },
     "provider": { "type": "string", "enum": ["gmail-api", "outlook-graph", "outlook-desktop", "sample"] },
     "messageId": { "type": ["string", "null"] },
     "draftId": { "type": ["string", "null"] },
@@ -22,4 +22,3 @@
     "error": { "type": ["string", "null"] }
   }
 }
-

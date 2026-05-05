@@ -53,6 +53,37 @@ This bootstrap does not ship mailbox data, token caches, or secrets.
 "@
 }
 
+function Get-NomadInboxTrayProcess {
+    param(
+        [string[]]$Identifiers
+    )
+
+    $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    return @($processes | Where-Object {
+        $commandLine = [string]$_.CommandLine
+        if ([string]::IsNullOrWhiteSpace($commandLine)) { return $false }
+        foreach ($identifier in $Identifiers) {
+            if (-not [string]::IsNullOrWhiteSpace($identifier) -and $commandLine.IndexOf($identifier, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                return $true
+            }
+        }
+        return $false
+    })
+}
+
+function Test-NomadInboxTrayBuildStale {
+    param([string]$ExePath, [string[]]$SourcePaths)
+
+    if (-not (Test-Path -LiteralPath $ExePath)) { return $true }
+    $exeTime = (Get-Item -LiteralPath $ExePath).LastWriteTimeUtc
+    foreach ($path in $SourcePaths) {
+        if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).LastWriteTimeUtc -gt $exeTime) {
+            return $true
+        }
+    }
+    return $false
+}
+
 $Command = if ($Argv.Count -gt 0) { $Argv[0] } else { $null }
 $Subcommand = if ($Argv.Count -gt 1) { $Argv[1] } else { $null }
 $RemainingArgs = if ($Argv.Count -gt 2) { @($Argv[2..($Argv.Count - 1)]) } else { @() }
@@ -140,9 +171,31 @@ try {
         }
         "tray" {
             if ($Subcommand -ne "start") { throw "Unsupported tray subcommand. Use: tray start" }
-            $tray = Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"
-            Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $tray) -WorkingDirectory $repoRoot | Out-Null
-            [pscustomobject]@{ status = "ok"; service = "NomadInbox"; tray = "started" } | ConvertTo-Json -Depth 10
+            $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+            $trayLauncher = Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"
+            $compiledTray = Join-Path $repoRoot "target\NomadInboxTray\NomadInboxTray.exe"
+
+            $existingCompiledTray = @(Get-NomadInboxTrayProcess -Identifiers @($compiledTray, "NomadInboxTray.exe") | Select-Object -First 1)
+            if ($existingCompiledTray.Count -gt 0) {
+                [pscustomobject]@{
+                    status = "ok"
+                    service = "NomadInbox"
+                    tray = "compiledAlreadyRunning"
+                    trayClient = "compiled"
+                    pid = $existingCompiledTray[0].ProcessId
+                    message = "NomadMail is available from the compiled NomadInbox system tray app. Open the Windows notification overflow if the icon is hidden."
+                } | ConvertTo-Json -Depth 10
+                break
+            }
+
+            $launcherArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $trayLauncher)
+            $dataDir = Get-NomadInboxOption $options "data-dir" ""
+            if (-not [string]::IsNullOrWhiteSpace($dataDir)) { $launcherArgs += @("-DataDir", $dataDir) }
+            $trayStartText = & powershell.exe @launcherArgs
+            if ([string]::IsNullOrWhiteSpace(($trayStartText | Out-String))) {
+                throw "Compiled tray launcher did not return a status."
+            }
+            $trayStartText
         }
         "config" {
             if ($Subcommand -ne "status") { throw "Unsupported config subcommand. Use: config status" }

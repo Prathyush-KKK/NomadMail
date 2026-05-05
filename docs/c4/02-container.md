@@ -6,8 +6,8 @@ flowchart TB
     cli["PowerShell CLI"]
     api["NomadMail MCP / HTTP"]
     core["NomadInbox Core"]
-    worker["Optional Sync Worker"]
-    tray["System Tray Controller"]
+    worker["Sync Worker"]
+    tray["Compiled Windows Tray Client"]
     importer["Archive Importer"]
     backup["Backup Status / User Prompts"]
     store["Local Message Store"]
@@ -21,6 +21,7 @@ flowchart TB
     agent --> api
     cli --> core
     api --> core
+    tray --> api
     tray --> cli
     worker --> core
     cli --> importer
@@ -46,9 +47,9 @@ flowchart TB
 |---|---|
 | CLI | Human/agent command surface |
 | NomadMail MCP / HTTP | Agent-native stdio tools and local REST-style calls |
-| Core | Provider registry, safety rules, schema consistency |
-| Optional sync worker | User-session background polling for enabled accounts |
-| System tray controller | Small local UI for start/stop/status/settings |
+| Core | Provider catalog, account config, safety rules, schema consistency |
+| Sync worker | User-session background polling for enabled accounts |
+| Compiled Windows tray client | Small local UI for sync/status/settings; reads cached status and calls HTTP asynchronously so the tray menu does not block |
 | Archive importer | Read-only ingestion of `.eml`, `.mbox`, and message JSONL exports |
 | Backup status / prompts | Combines sync/import counts into agent/user guidance |
 | Store | Local message projection |

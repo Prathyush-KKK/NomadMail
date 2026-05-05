@@ -71,6 +71,17 @@ Important ignored paths:
 
 Do not force-add those files to git.
 
+## Set User Time Context
+
+NomadInbox stores timestamps as UTC ISO, but parses ambiguous user/source dates with the user locale and time zone. By default it uses the current OS user settings. Override them before launching the CLI, tray, MCP, or HTTP service when needed:
+
+```powershell
+$env:NOMADINBOX_USER_CULTURE="en-IN"
+$env:NOMADINBOX_USER_TIME_ZONE="India Standard Time"
+# Cross-platform agents may use the IANA form:
+$env:NOMADINBOX_USER_TIME_ZONE_IANA="Asia/Kolkata"
+```
+
 ## Create Local Account Config
 
 ```powershell
@@ -160,17 +171,15 @@ The worker periodically runs the same sync path as `sync once`.
 .\scripts\nomad-inbox.ps1 tray start
 ```
 
-The tray menu can:
+Click or right-click the tray icon to open the compact native menu. The tray menu can:
 
-- show sync instructions when auto sync is off
-- show auto sync status when auto sync is on
-- copy an agent connection prompt
+- run a global `Sync now`
 - turn auto sync on or off after accounts are enabled
-- open account settings
+- show per-account sync status
+- open Settings and diagnostics for logs, errors, provider details, storage paths, locale, and time-zone state
 - open the runtime folder
-- open the NomadInbox repository folder
 
-If no accounts are enabled, the tray will not start an empty background worker. It points you to account connection first.
+If no accounts are enabled, the tray will not start an empty background worker. It shows a short note to ask your agent when you want to connect new accounts.
 
 ## Import Local Email Exports
 

@@ -19,10 +19,11 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $safeTitle = ($Title.ToLowerInvariant() -replace '[^a-z0-9]+', '-' -replace '(^-|-$)', '')
 $file = Join-Path $updatesDir "$stamp-$safeTitle.md"
 $today = Get-Date -Format "yyyy-MM-dd"
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 $content = Get-Content -LiteralPath $template -Raw
 $content = $content.Replace("TITLE", $Title).Replace("YYYY-MM-DD", $today).Replace("SUMMARY", $Summary)
-$content | Set-Content -LiteralPath $file -Encoding UTF8
+[System.IO.File]::WriteAllText($file, $content, $utf8NoBom)
 
 $entry = @"
 
@@ -44,11 +45,11 @@ if ($existing.StartsWith($header)) {
 } else {
     $updated = $entry + "`r`n" + $existing
 }
-$updated | Set-Content -LiteralPath $changelog -Encoding UTF8
+$updated = $updated.TrimEnd() + "`r`n"
+[System.IO.File]::WriteAllText($changelog, $updated, $utf8NoBom)
 
 [pscustomobject]@{
     status = "ok"
     updateFile = $file
     changelog = $changelog
 } | ConvertTo-Json -Depth 5
-

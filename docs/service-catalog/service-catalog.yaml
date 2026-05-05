@@ -19,7 +19,10 @@ services:
       - expose-agent-tools
       - wrap-nomadinbox-cli
       - expose-startup-system-prompt
+      - expose-workspace-state
       - search-local-message-store
+      - sync-before-latest-email-read
+      - expose-locale-time-context
       - return-platform-runtime-guidance
       - preserve-send-confirmation-boundary
   - name: nomadmail-http-service
@@ -34,8 +37,26 @@ services:
       - expose-local-rest-api
       - support-non-mcp-agents
       - expose-startup-system-prompt
+      - expose-workspace-state
+      - expose-locale-time-context
+      - sync-before-latest-email-read
       - wrap-nomadinbox-cli
       - return-platform-runtime-guidance
+  - name: locale-time-context
+    type: local-core-support
+    status: bootstrapped
+    criticality: high
+    interfaces:
+      - NOMADINBOX_USER_CULTURE
+      - NOMADINBOX_USER_LOCALE
+      - NOMADINBOX_USER_TIME_ZONE
+      - NOMADINBOX_USER_TIME_ZONE_IANA
+      - os-user-locale
+    responsibilities:
+      - parse-ambiguous-user-times
+      - normalize-persisted-timestamps-to-utc-iso
+      - expose-local-time-context-to-agents
+      - format-user-facing-status-times
   - name: windows-agent-helper
     type: local-installer
     status: bootstrapped
@@ -76,18 +97,25 @@ services:
       - Disabled by default.
       - Runs in the signed-in user session so desktop providers can work.
       - Not a privileged Windows Service in the bootstrap version.
-  - name: system-tray-controller
+  - name: compiled-system-tray-client
     type: local-user-interface
     status: bootstrapped
     criticality: medium
     interfaces:
+      - target/NomadInboxTray/NomadInboxTray.exe
+      - src/NomadInbox.Tray/NomadInboxTray.cs
       - windows-forms-notifyicon
-      - powershell-cli
+      - cached-status-file
+      - local-http-async
     responsibilities:
-      - start-background-sync
-      - stop-background-sync
-      - show-sync-status
-      - open-account-settings
+      - keep-local-http-service-available
+      - render-menu-from-cached-state
+      - queue-sync-now-as-background-task
+      - start-stop-background-sync-as-background-task
+      - show-sync-status-and-settings
+    notes:
+      - PowerShell remains the launcher/build wrapper and service layer.
+      - Menu construction must not call HTTP, sync, or CLI directly.
   - name: archive-importer
     type: local-importer
     status: bootstrapped

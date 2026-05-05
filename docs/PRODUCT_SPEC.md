@@ -24,6 +24,8 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 9. Remind users how much live and archived mail context is backed up.
 10. Expose mailbox status, sync, search, get, and import operations through MCP and local HTTP.
 11. Let Windows agents install a local helper so sync state and connected account config can be tracked from the user workspace.
+12. Parse ambiguous user/source times in the user's locale and time zone while storing normalized UTC timestamps.
+13. Answer latest-email questions only after a one-shot live sync against already configured/enabled accounts.
 
 ## Providers
 
@@ -68,6 +70,8 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 - Users can configure per-account sync settings through ignored local config.
 - Users can import historical mail exports without making those messages directly actionable.
 - Users can see backed-up message counts and guidance through `backup status`.
+- Users see time-related status in local user time while persisted records remain UTC ISO 8601.
+- Latest-email answers are freshness-gated: if the live sync cannot complete, agents say the latest email cannot be confirmed rather than using stale local state.
 - Agents can discover and call NomadMail tools through MCP or loopback HTTP.
 - Windows agents can install the helper before connecting accounts; non-Windows agents receive clear platform guidance while the Node MCP server remains usable for local context tools.
 - Provider implementations can be added without changing the normalized data contracts.

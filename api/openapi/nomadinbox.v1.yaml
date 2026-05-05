@@ -30,6 +30,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SystemPrompt"
+  /workspace-state:
+    get:
+      operationId: nomadmailGetWorkspaceState
+      summary: Return the living NomadInbox workspace state
+      description: Agents should read this state before answering, then refresh live status through health/provider/account tools.
+      responses:
+        "200":
+          description: Workspace state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceState"
   /health:
     get:
       operationId: nomadmailHealthCheck
@@ -93,6 +105,33 @@ paths:
       responses:
         "200":
           description: Sync result
+  /messages/latest:
+    post:
+      operationId: nomadmailGetLatestMessage
+      summary: Sync first, then return the newest live message with available content
+      description: Use for latest-email questions. The one-shot sync only covers already configured and enabled live accounts; if sync cannot complete, clients must not present stale local data as definitely latest.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                accountId:
+                  type: string
+                provider:
+                  type: string
+                folder:
+                  type: string
+                requireContent:
+                  type: boolean
+                  default: true
+                syncFirst:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Latest live message result
   /sync/once:
     post:
       operationId: nomadmailSyncOnce
@@ -252,8 +291,23 @@ components:
           type: string
         purpose:
           type: string
+        timeHandling:
+          type: object
+          properties:
+            locale:
+              type: string
+            timeZone:
+              type: string
+            nowUtc:
+              type: string
+            nowLocal:
+              type: string
+            parsingRule:
+              type: string
         startupSystemPrompt:
           $ref: "#/components/schemas/SystemPrompt"
+        workspaceState:
+          $ref: "#/components/schemas/WorkspaceState"
         storageBoundary:
           type: object
           properties:
@@ -295,6 +349,19 @@ components:
         promptType:
           type: string
           enum: [system]
+        path:
+          type: string
+        text:
+          type: string
+    WorkspaceState:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        name:
+          type: string
         path:
           type: string
         text:
@@ -364,6 +431,9 @@ components:
         syncStatus:
           type: object
           nullable: true
+        timeContext:
+          type: object
+          nullable: true
     BackupStatus:
       type: object
       properties:
@@ -409,6 +479,9 @@ components:
           items:
             type: object
         receivedAt:
+          type: string
+          nullable: true
+        receivedAtLocal:
           type: string
           nullable: true
         snippet:

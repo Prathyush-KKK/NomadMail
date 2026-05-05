@@ -1,5 +1,6 @@
 # Runtime data and local state
 data/
+-DataDir/
 runtime/
 target/
 logs/
@@ -15,6 +16,7 @@ downloads/
 *.msg
 mail-exports/
 import-staging/
+scripts/_*.ps1
 
 # Secrets and local config
 .env
@@ -31,3 +33,10 @@ client_secret*.json
 Thumbs.db
 .vscode/
 .idea/
+.kiro/
+MAYOR_RESTORED_CONTEXT.md
+MAYOR_STARTUP_PROMPT.txt
+# Mayor continuity context
+AGENTS.continuity.md
+CLAUDE.continuity.md
+.kiro/steering/agent-continuity.md
