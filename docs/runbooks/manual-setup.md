@@ -169,21 +169,30 @@ The worker periodically runs the same sync path as `sync once`.
 
 ```powershell
 .\scripts\nomad-inbox.ps1 tray start
+.\scripts\nomad-inbox.ps1 tray status
 ```
 
-Click or right-click the tray icon to open the compact native menu. The tray menu can:
+Click the tray icon to open the compact native status popup. Right-click keeps a fallback context menu. The tray popup can:
 
+- refresh current status with visible busy feedback
 - run a global `Sync now`
 - turn auto sync on or off after accounts are enabled
-- show per-account sync status
+- show clean per-account sync status
 - open Settings and diagnostics for logs, errors, provider details, storage paths, locale, and time-zone state
 - open the runtime folder
 
 If no accounts are enabled, the tray will not start an empty background worker. It shows a short note to ask your agent when you want to connect new accounts.
 
+`tray status` returns the compiled tray process state, installed helper status,
+local HTTP health, worker state, and the active data directory.
+
 ## Import Local Email Exports
 
 Archive imports are read-only context by default.
+After a live email is discovered, agents can offer draft reply, draft new mail,
+mark/flag/move/archive, and trash/delete guidance. Replies and new mail must be
+drafted first and sent only after approval. Trash/delete requires two explicit
+approvals before any mailbox mutation.
 
 ```powershell
 .\scripts\nomad-inbox.ps1 import status
@@ -227,6 +236,25 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8791/sync/once -Body '{"accountI
 ```
 
 The smoke test uses a temporary `NOMADINBOX_DATA_DIR`, so it does not write real mailbox data to the default store.
+
+## Build A Versioned Installer Package
+
+For a local test package while the working tree is dirty:
+
+```powershell
+.\scripts\build-windows-installer.ps1 -AllowDirty
+```
+
+For a publish candidate, commit the intended changes first and run:
+
+```powershell
+.\scripts\build-windows-installer.ps1
+```
+
+The package is written under ignored `dist\` and includes only tracked product
+files plus the compiled tray executable. Runtime data, local account config,
+Kiro scratch files, secrets, token caches, and mail exports stay out of the
+package. See [Release And Installer Packaging](release.md).
 
 ## Troubleshooting
 

@@ -12,10 +12,15 @@
     "draftId": { "type": ["string", "null"] },
     "actionType": {
       "type": "string",
-      "enum": ["sync", "get", "search", "createDraft", "replyDraft", "replyAllDraft", "attach", "sendDraft", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash"]
+      "enum": ["sync", "get", "search", "createDraft", "replyDraft", "replyAllDraft", "attach", "sendDraft", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "delete"]
     },
     "requiresUserConfirmation": { "type": "boolean" },
     "confirmedByUser": { "type": "boolean" },
+    "confirmationRequirement": {
+      "type": "string",
+      "enum": ["none", "single", "double"],
+      "description": "Expected confirmation depth. Send and ordinary state mutations use single confirmation; trash/delete requires double explicit confirmation."
+    },
     "status": { "type": "string", "enum": ["success", "error", "pendingConfirmation", "dryRun"] },
     "input": { "type": "object" },
     "result": { "type": "object" },

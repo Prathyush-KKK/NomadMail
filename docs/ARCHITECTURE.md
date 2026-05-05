@@ -43,7 +43,7 @@ MCP over stdio is started by each calling agent. On Windows, the tray controller
 is a compiled WinForms client that keeps the local HTTP service available while
 the tray is running so agent access can stay live without a separate terminal
 window. The tray client reads cached status first and performs HTTP status,
-manual sync, and auto-sync start/stop calls asynchronously; tray menu rendering
+manual sync, and auto-sync start/stop calls asynchronously; tray popup rendering
 must not wait on sync or HTTP refresh.
 
 The MCP/HTTP service runtime is Node.js and should remain platform independent.
@@ -148,6 +148,23 @@ example `backup export` and `backup restore --target-data-dir`, with a dry-run
 restore preview and no credential backup unless the user provides an encrypted
 secret-backup option.
 
+## Release Packaging
+
+The app version is stored in the root `VERSION` file and read by both NomadMail
+service health and the Windows release packager.
+
+Windows publish candidates are built with `scripts/build-windows-installer.ps1`.
+The script refuses dirty working trees by default, copies only `git ls-files`
+tracked product files plus the required `VERSION` file, builds the compiled tray
+executable into the package, and writes a sidecar manifest with the package
+SHA-256 hash. A local test package can be built with `-AllowDirty`, but publish
+candidates should come from clean `main`.
+
+The release package excludes runtime data, account config, OAuth secrets, token
+caches, Kiro scratch files, mail exports, logs, JSONL stores, and generated build
+folders. The generated `install.ps1` delegates to the same Windows helper install
+path used by agents.
+
 ## Agent Service Contract
 
 NomadMail currently exposes these MCP tools:
@@ -190,6 +207,7 @@ Providers should expose these capabilities where supported:
 - `sync`
 - `search`
 - `get`
+- `message actions`
 - `attachments list`
 - `attachments save`
 - `compose draft`
@@ -212,6 +230,8 @@ Bootstrap provider sync is implemented for:
 These bootstrap adapters store normalized metadata and snippets in
 `data/messages.jsonl`. Draft, send, attachment hydration, and state mutation
 remain governed by the safety / approval gate before service exposure.
+The MCP/HTTP service can expose action guidance for discovered messages, but
+that guidance is not itself permission to mutate a mailbox.
 
 ## Archive Import Contract
 
@@ -260,6 +280,7 @@ Rules:
 - Read commands can run after provider auth.
 - Draft commands do not imply send.
 - Send commands require explicit confirmation.
+- Trash/delete commands require double explicit confirmation before provider mutation.
 - Bulk state changes should support dry-run first.
 - Permanent delete is not a default action. Prefer trash/archive.
 - Every mutating command writes an action record.
@@ -286,18 +307,22 @@ The tray controller is user-controlled:
 
 ```text
 nomad-inbox.ps1 tray start
-  -> starts target/NomadInboxTray/NomadInboxTray.exe
+  -> starts NOMADINBOX_TRAY_EXE when set, otherwise target/NomadInboxTray/NomadInboxTray.exe
   -> compiled from src/NomadInbox.Tray/NomadInboxTray.cs when needed
   -> exposes sync-now/auto-sync-toggle/status/settings/open-runtime-folder
 ```
 
 It is a small compiled Windows Forms NotifyIcon process, not a full desktop app.
+The Windows helper install builds an installed copy at
+`%LOCALAPPDATA%/NomadInbox/agent-helper/NomadInboxTray.exe` and points
+`NOMADINBOX_TRAY_EXE` at that copy so normal installed usage does not depend on
+running the tray executable from repository `target/`.
 While running, the tray keeps the local NomadMail HTTP service active at
 `127.0.0.1:8791`; MCP stdio remains per-agent launch. The default tray
-interaction is a compact native menu with Sync now, an auto-sync toggle,
-per-account sync status, and a short note to ask an agent for new account
-connection. The menu is built only from cached in-memory state, and refresh or
-sync work is queued on background tasks. The larger Settings window shows
+interaction is a compact native status popup with Refresh, Sync now, an
+auto-sync toggle, per-account sync status, and a short note to ask an agent for
+new account connection. The popup is built only from cached in-memory state, and
+refresh or sync work is queued on background tasks. The larger Settings window shows
 diagnostics, provider state, storage paths, approval gates, locale, and
 time-zone status only when explicitly opened. The tray does not discover account
 credentials by itself. If no enabled account exists, Sync now and auto sync show

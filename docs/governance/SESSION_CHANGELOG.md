@@ -1,5 +1,32 @@
 # Session Architecture Changelog
 
+## 2026-05-06 - Message action guidance
+
+Summary:
+
+- NomadMail now returns UI-ready mail action guidance after message discovery, with draft-before-send, explicit send approval, provider-runtime caveats, archive read-only handling, and double confirmation for trash/delete.
+
+Session note:
+
+- docs/governance/session-updates/20260506-014308-message-action-guidance.md
+## 2026-05-06 - Native tray status popup
+
+Summary:
+
+- The compiled Windows tray now opens a compact native status popup with icon buttons, visible refresh feedback, clean account sync rows, and locale-aware status times.
+
+Session note:
+
+- docs/governance/session-updates/20260506-012528-native-tray-status-popup.md
+## 2026-05-06 - Installed compiled tray runtime
+
+Summary:
+
+- Windows helper install now builds and uses an installed compiled tray executable under the local app-data helper folder. The helper sets NOMADINBOX_TRAY_EXE so tray start uses the installed executable, and tray-running detection now matches the configured executable path instead of a generic process-name substring.
+
+Session note:
+
+- docs/governance/session-updates/20260506-012202-installed-compiled-tray-runtime.md
 ## 2026-05-06 - Compiled Windows tray client
 
 Summary:

@@ -28,6 +28,11 @@ try {
         throw "windows helper install failed"
     }
 
+    $trayStatus = & $cli tray status | ConvertFrom-Json
+    if ($trayStatus.status -ne "ok" -or $trayStatus.trayClient -ne "compiled" -or -not $trayStatus.installedExePath) {
+        throw "tray status failed"
+    }
+
     $nodeInstallRoot = Join-Path $testRoot "agent-helper-node"
     $nodeInstall = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") install-windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $nodeInstallRoot | ConvertFrom-Json
     if ($nodeInstall.status -ne "ok" -or -not (Test-Path -LiteralPath $nodeInstall.helperPath) -or -not (Test-Path -LiteralPath $nodeInstall.statusPath)) {
@@ -115,7 +120,7 @@ This sample validates archive ingestion without using real mailbox exports.
     }
 
     $agentService = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") self-test | ConvertFrom-Json
-    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or -not $agentService.latestMessageStatus) {
+    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or -not $agentService.latestMessageStatus -or $agentService.messageActionsStatus -ne "ok") {
         throw "agent service self-test failed"
     }
 
@@ -123,14 +128,17 @@ This sample validates archive ingestion without using real mailbox exports.
     if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_latest_message" }).Count -ne 1) {
         throw "latest message tool missing"
     }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_message_actions" }).Count -ne 1) {
+        throw "message actions tool missing"
+    }
 
     $agentGuide = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-guide | ConvertFrom-Json
-    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*")) {
+    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*") -or -not $agentGuide.mailActionGuidance -or $agentGuide.mailActionGuidance.permissionModel.deleteApproval -notlike "*two explicit confirmations*") {
         throw "agent guide failed"
     }
 
     $systemPrompt = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") system-prompt | ConvertFrom-Json
-    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*Your first response must show*" -or $systemPrompt.text -notlike "*Windows helper and tray status*" -or $systemPrompt.text -notlike "*runtime/agent-scratch*" -or $systemPrompt.text -notlike "*MCP stdio tools are launched by each calling agent*" -or $systemPrompt.text -notlike "*Do not dump endpoint lists*" -or $systemPrompt.text -notlike "*user's locale and time zone*" -or $systemPrompt.text -notlike "*latest email*") {
+    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*Your first response must show*" -or $systemPrompt.text -notlike "*Windows helper and tray status*" -or $systemPrompt.text -notlike "*runtime/agent-scratch*" -or $systemPrompt.text -notlike "*MCP stdio tools are launched by each calling agent*" -or $systemPrompt.text -notlike "*Do not dump endpoint lists*" -or $systemPrompt.text -notlike "*user's locale and time zone*" -or $systemPrompt.text -notlike "*latest email*" -or $systemPrompt.text -notlike "*Trash/delete requires double explicit approval*") {
         throw "startup system prompt failed"
     }
 
@@ -139,9 +147,15 @@ This sample validates archive ingestion without using real mailbox exports.
         throw "workspace state failed"
     }
 
+    $releaseOutputDir = Join-Path $testRoot "dist"
+    $release = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repoRoot "scripts\build-windows-installer.ps1") -Version "0.0.0-smoke" -OutputDir $releaseOutputDir -AllowDirty | ConvertFrom-Json
+    if ($release.status -ne "ok" -or -not (Test-Path -LiteralPath $release.packagePath) -or -not (Test-Path -LiteralPath $release.manifestPath) -or $release.includedFileCount -lt 10) {
+        throw "versioned installer package failed"
+    }
+
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "install windows helper", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "agent guide", "startup system prompt", "workspace state")
+        tests = @("doctor", "providers list", "accounts list", "install windows helper", "tray status", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "message actions tool", "agent guide", "startup system prompt", "workspace state", "versioned installer package")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {

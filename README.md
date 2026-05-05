@@ -25,12 +25,19 @@ Core principles:
 - User-facing and ambiguous time scopes are interpreted in the user's locale and time zone, then persisted as UTC ISO timestamps.
 - Drafting is separate from sending.
 - Sending and mailbox mutations require explicit confirmation.
+- Trash/delete needs a second explicit confirmation before any destructive mailbox action.
 - Provider-specific message IDs are preserved.
 - Local runtime data is not pushed to GitHub.
 
 ## Start With An AI Agent
 
-Open this repository in your AI agent workspace:
+Give this repository link to your AI agent and ask it to clone and open the workspace:
+
+```text
+https://github.com/Prathyush-KKK/Nomad-Inbox
+```
+
+If the repository is already cloned, open that local workspace instead. Example local path:
 
 ```text
 C:\Users\prat\Documents\osm\NomadInbox
@@ -44,7 +51,21 @@ Agents should also read [WORKSPACE_STATE.md](docs/governance/WORKSPACE_STATE.md)
 
 On first response, the agent should show what NomadInbox can do in this workspace now, which mail sources are available or need setup, where local data will be stored, which files are protected from GitHub, Windows helper and tray status on Windows, where temporary diagnostic scripts may be created if needed, the latest durable workspace state, what actions need approval, and the safest next step.
 
-On Windows, the tray controller is a compiled WinForms tray client. It keeps the local NomadMail HTTP service available at `127.0.0.1:8791` while the tray is running. MCP over stdio is still launched by each calling agent, but the HTTP surface stays available for agents that use loopback HTTP. The tray menu is rendered from cached status and performs status refresh, Sync now, and auto-sync changes asynchronously, so opening the menu never waits on mail sync or HTTP refresh. The normal tray click opens a compact native menu with Sync now, an auto-sync toggle, and per-account sync status. Settings and diagnostics open only from the tray menu.
+After cloning and opening the workspace, the agent should explain to the user:
+
+- NomadInbox is the local workspace; NomadMail is the callable service agents use.
+- It can connect approved Gmail, Outlook Graph, Outlook Desktop, or local email exports.
+- Runtime data, account config, message indexes, logs, and tokens stay local and are ignored by git.
+- On Windows, the helper and compiled tray app can keep local service access available from the system tray.
+- MCP stdio is available for agents on any OS; Outlook Desktop and tray features are Windows-only.
+- Mail actions are draft-first; send requires approval, and trash/delete requires double explicit approval.
+- The next step is to choose one source and one scope, such as Outlook Desktop inbox for the last 30 days, Gmail inbox headers, or a local export import.
+
+On Windows, the tray controller is a compiled WinForms tray client. It keeps the local NomadMail HTTP service available at `127.0.0.1:8791` while the tray is running. MCP over stdio is still launched by each calling agent, but the HTTP surface stays available for agents that use loopback HTTP. The normal tray click opens a compact native status popup with icon buttons for Refresh, Sync now, auto sync, Settings, and Runtime, plus message counts and per-account sync status. Refresh, Sync now, and auto-sync changes show immediate UI feedback and run asynchronously, so opening the popup never waits on mail sync or HTTP refresh. Settings and diagnostics stay behind the Settings action.
+
+The Windows helper install builds and uses an installed tray executable at `%LOCALAPPDATA%\NomadInbox\agent-helper\NomadInboxTray.exe`. The repository-local `target\` executable remains only a build fallback and is ignored by Git.
+
+Use `.\scripts\nomad-inbox.ps1 tray status` to verify whether the compiled tray is running, which helper install it is using, and whether local HTTP health is reachable.
 
 Agent status responses should stay short. If the user asks to install, start, or run the service on Windows, start or verify the tray controller and tell the user NomadMail is available from the NomadInbox system tray icon. Do not dump endpoint catalogs, raw health JSON, process lists, or message search results unless asked.
 
@@ -54,6 +75,7 @@ What the agent can do with NomadInbox:
 - sync a small approved mailbox scope into the local ignored store
 - import approved email backups as read-only context
 - search local mail context and fetch cited messages
+- show mail action choices after discovery, including draft reply, draft new mail, mark/flag/move/archive, and trash/delete only when the message is live and actionable
 - report sync status, backup counts, worker state, and storage location
 - start the tray app and turn on auto sync after accounts are connected
 - stage data in another local folder with `NOMADINBOX_DATA_DIR`
@@ -91,11 +113,13 @@ NomadMail exposes NomadInbox to agents through:
 - local HTTP on `127.0.0.1`
 - the underlying PowerShell CLI
 
-The service supports provider/account discovery, one-shot sync, local message search, message lookup, backup status, service status, background worker start/stop, agent guidance, and read-only archive import.
+The service supports provider/account discovery, one-shot sync, local message search, message lookup, UI-ready message action guidance, backup status, service status, background worker start/stop, agent guidance, and read-only archive import.
 
 Time handling is locale-aware. Set `NOMADINBOX_USER_CULTURE` or `NOMADINBOX_USER_LOCALE`, plus `NOMADINBOX_USER_TIME_ZONE` or `NOMADINBOX_USER_TIME_ZONE_IANA`, when an agent needs a specific user locale/time-zone context; otherwise NomadInbox uses the current OS user culture and local time zone. Stored timestamps remain UTC ISO 8601, while tray/dashboard/status text is shown in local user time.
 
 Latest-email questions are freshness-gated. When a user asks for the latest email, newest message, recent mail, or latest email content, agents must run one request-scoped live sync against already configured/enabled accounts before answering. If sync cannot complete, the agent must say it cannot confirm the latest email instead of treating stale local state as definite.
+
+After finding a live email, agents should offer a short action menu instead of stopping at the summary. Replies, forwards, and new mail must be drafted first, then sent only after approval of the exact draft. Trash/delete requires two explicit approvals. Actions may still fail when provider permissions or local runtime access are missing, such as read-only Gmail/Graph scopes or Outlook Desktop COM not being reachable.
 
 Agents should call `nomadmail_get_agent_guide` or HTTP `/agent-guide` before syncing mail or parsing email backups for another repository.
 
@@ -104,6 +128,26 @@ Agents should load the built-in startup system prompt from `nomadmail_get_startu
 Agents may create temporary diagnostic scripts for complex local checks only under ignored scratch locations such as `runtime\agent-scratch\` or the OS temp directory. Tracked repository code should stay limited to durable sync, service, provider, tray, schema, and documented product behavior.
 
 The MCP server is a Node.js service intended to start on any OS, including direct launch with `node service/nomadmail-service.mjs mcp`. Windows agents should install the PowerShell helper for sync/account tracking. Non-Windows agents should keep using MCP for local JSONL context tools and return a clear unsupported-runtime response for Windows-only helper, tray, and Outlook Desktop operations. The Windows tray owns the long-running local HTTP service; MCP stdio remains client-launched.
+
+## Release Packaging
+
+NomadInbox has a versioned Windows package flow. The version is stored in `VERSION`.
+
+For a local test package while changes are still uncommitted:
+
+```powershell
+.\scripts\build-windows-installer.ps1 -AllowDirty
+```
+
+For a publish candidate, commit the intended changes first, verify `main` is clean and synced, then run:
+
+```powershell
+.\scripts\validate.ps1
+.\tests\smoke.ps1
+.\scripts\build-windows-installer.ps1
+```
+
+The package is written to ignored `dist\` as `NomadInbox-<version>-windows.zip` with a sidecar manifest and SHA-256 hash. It includes tracked product files, the required `VERSION` file, and the compiled tray executable, so runtime data, local account config, Kiro scratch scripts, tokens, and mail exports are excluded. See [release.md](docs/runbooks/release.md).
 
 ## Repository Map
 
@@ -120,12 +164,13 @@ The MCP server is a Node.js service intended to start on any OS, including direc
 | `api/` | OpenAPI and AsyncAPI contracts |
 | `config/` | Safe example config only |
 | `tests/` | Smoke checks |
+| `VERSION` | Version used by NomadMail and release packaging |
 
 ## Safety
 
 NomadInbox is request-driven by default. Background sync starts only when the user enables accounts and starts the worker or tray auto-sync toggle. Starting the tray can keep the local HTTP agent service alive, but it does not enable mailbox auto sync.
 
-Imported archive mail is read-only context. Live provider actions such as reply, send, move, archive, trash, flag, mark-read, or attachment save must remain explicit action-time workflows.
+Imported archive mail is read-only context. Live provider actions such as reply, send, move, archive, trash, flag, mark-read, or attachment save must remain explicit action-time workflows. Draft email first; send only after explicit approval. Trash/delete requires a second explicit confirmation naming the message and mailbox effect.
 
 ## Manual Setup
 

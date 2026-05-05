@@ -49,7 +49,7 @@ flowchart TB
 | NomadMail MCP / HTTP | Agent-native stdio tools and local REST-style calls |
 | Core | Provider catalog, account config, safety rules, schema consistency |
 | Sync worker | User-session background polling for enabled accounts |
-| Compiled Windows tray client | Small local UI for sync/status/settings; reads cached status and calls HTTP asynchronously so the tray menu does not block |
+| Compiled Windows tray client | Small local UI for sync/status/settings; reads cached status and calls HTTP asynchronously so the tray popup does not block |
 | Archive importer | Read-only ingestion of `.eml`, `.mbox`, and message JSONL exports |
 | Backup status / prompts | Combines sync/import counts into agent/user guidance |
 | Store | Local message projection |

@@ -35,6 +35,18 @@ if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
 }
 $resolvedInstallRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallRoot)
 New-Item -ItemType Directory -Force -Path $resolvedInstallRoot | Out-Null
+$installedTrayPath = Join-Path $resolvedInstallRoot "NomadInboxTray.exe"
+$trayBuildScript = Join-Path $repoRoot "scripts\build-nomad-inbox-tray.ps1"
+$runningTrayProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -eq "NomadInboxTray.exe" -and ([string]$_.CommandLine).IndexOf($installedTrayPath, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+})
+foreach ($trayProcess in $runningTrayProcesses) {
+    Stop-Process -Id $trayProcess.ProcessId -Force -ErrorAction SilentlyContinue
+}
+if ($runningTrayProcesses.Count -gt 0) {
+    Start-Sleep -Milliseconds 500
+}
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $trayBuildScript -OutputPath $installedTrayPath | Out-Null
 
 $previousDataDir = $env:NOMADINBOX_DATA_DIR
 $env:NOMADINBOX_DATA_DIR = $resolvedDataDir
@@ -53,6 +65,7 @@ $helperPath = Join-Path $resolvedInstallRoot "nomadmail.ps1"
 $statusPath = Join-Path $resolvedInstallRoot "status.json"
 $escapedCli = $cli.Replace("'", "''")
 $escapedDataDir = $resolvedDataDir.Replace("'", "''")
+$escapedTrayPath = $installedTrayPath.Replace("'", "''")
 $helperScript = @"
 param(
     [Parameter(ValueFromRemainingArguments = `$true)]
@@ -61,6 +74,7 @@ param(
 
 `$ErrorActionPreference = "Stop"
 `$env:NOMADINBOX_DATA_DIR = '$escapedDataDir'
+`$env:NOMADINBOX_TRAY_EXE = '$escapedTrayPath'
 & '$escapedCli' @Argv
 "@
 $helperScript | Set-Content -LiteralPath $helperPath -Encoding UTF8
@@ -74,6 +88,7 @@ $state = [pscustomobject]@{
     repoRoot = $repoRoot
     dataDir = $resolvedDataDir
     helperPath = $helperPath
+    trayExePath = $installedTrayPath
     accountsConfigPath = $accountsConfigPath
     syncStatusPath = Join-Path $resolvedDataDir "sync-status.json"
     messagesPath = Join-Path $resolvedDataDir "messages.jsonl"
@@ -89,7 +104,9 @@ $state | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $statusPath -Encodi
 $trayStartResult = $null
 if ($StartTray) {
     $previousTrayDataDir = $env:NOMADINBOX_DATA_DIR
+    $previousTrayExe = $env:NOMADINBOX_TRAY_EXE
     $env:NOMADINBOX_DATA_DIR = $resolvedDataDir
+    $env:NOMADINBOX_TRAY_EXE = $installedTrayPath
     try {
         $trayStartText = & $cli tray start
         if (-not [string]::IsNullOrWhiteSpace(($trayStartText | Out-String))) {
@@ -100,6 +117,11 @@ if ($StartTray) {
             Remove-Item Env:\NOMADINBOX_DATA_DIR -ErrorAction SilentlyContinue
         } else {
             $env:NOMADINBOX_DATA_DIR = $previousTrayDataDir
+        }
+        if ($null -eq $previousTrayExe) {
+            Remove-Item Env:\NOMADINBOX_TRAY_EXE -ErrorAction SilentlyContinue
+        } else {
+            $env:NOMADINBOX_TRAY_EXE = $previousTrayExe
         }
     }
 }
@@ -112,6 +134,7 @@ if ($StartTray) {
     helperPath = $helperPath
     statusPath = $statusPath
     dataDir = $resolvedDataDir
+    trayExePath = $installedTrayPath
     accountsConfigPath = $accountsConfigPath
     trayStarted = [bool]$StartTray
     trayStatus = if ($trayStartResult) { $trayStartResult.tray } else { $null }

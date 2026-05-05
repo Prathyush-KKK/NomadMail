@@ -48,6 +48,7 @@ Primary tools:
 - `nomadmail_search_messages`
 - `nomadmail_get_latest_message`
 - `nomadmail_get_message`
+- `nomadmail_get_message_actions`
 - `nomadmail_import_archive`
 
 ## HTTP
@@ -85,7 +86,13 @@ All time-related parsing must use the user's locale and time zone. On Windows th
 
 For latest-email questions, run a one-shot live sync first. Use `nomadmail_get_latest_message` with `syncFirst=true`, or call `nomadmail_sync_once` before searching live messages. The latest-email request only implies permission for that one freshness sync against already configured and enabled live accounts. It does not permit enabling accounts, discovering credentials, reading exports, storing full bodies, saving attachments, or mutating mail. If sync fails or no live account is enabled, say the latest email cannot be confirmed.
 
+After a message is discovered, use the `actionMenu` on search/latest results or call `nomadmail_get_message_actions` to present a compact action surface. Good user-facing actions are draft reply, draft reply all, draft forward, draft new mail, mark read/unread, flag/star, move/archive, and trash/delete when the selected live message supports them. Imported archive messages are read-only; offer summarize, extract follow-up, or find the matching live message instead.
+
+Mail actions are permission gated. Replies, forwards, and new mail must be drafted first, then sent only after the user approves the exact draft, recipients, subject, and body. Trash/delete requires double explicit approval: confirm intent first, then ask for a final confirmation naming the message and mailbox effect. Tell the user the action may not complete if provider permissions or runtime access are missing, such as read-only Gmail/Graph scopes, missing Graph write/send scopes, or Outlook Desktop COM not being reachable in the signed-in Windows session.
+
 User-facing setup responses should be short. When the user asks to install, start, or run the service on Windows, start or verify the tray controller instead of starting only the raw HTTP server. When the local service is healthy and the tray is running, tell the user NomadMail is available from the NomadInbox system tray. Do not print endpoint catalogs, raw health JSON, process listings, or message search results unless the user asks for diagnostics.
+
+Use `.\scripts\nomad-inbox.ps1 tray status` for non-interactive tray verification. It is the preferred status check before telling the user whether the compiled tray and tray-owned HTTP service are running.
 
 When an agent opens this repository as a user workspace:
 
@@ -138,6 +145,7 @@ npm run index
 - Archive import still requires an explicitly provided local path.
 - Full archive body import still requires `includeBodies=true`.
 - Send-style mailbox actions must stay behind the existing confirmation gate before they are added to this service.
+- Trash/delete must stay behind a double-confirmation gate before any destructive mailbox action is added to this service.
 - Outlook Desktop access must run in the signed-in Windows user session because it depends on the local Outlook profile.
 
 ## Diagnostics
@@ -150,4 +158,5 @@ node .\service\nomadmail-service.mjs self-test
 node .\service\nomadmail-service.mjs tools
 .\scripts\nomad-inbox.ps1 doctor
 .\scripts\nomad-inbox.ps1 service status
+.\scripts\nomad-inbox.ps1 tray status
 ```

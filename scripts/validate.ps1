@@ -4,6 +4,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $required = @(
     "README.md",
     ".gitignore",
+    "VERSION",
     "config\nomad-inbox.example.ps1",
     "config\accounts.example.json",
     "prompts\nomadmail-startup.system.md",
@@ -15,6 +16,7 @@ $required = @(
     "scripts\build-app-icons.ps1",
     "scripts\install-windows-agent-helper.ps1",
     "scripts\build-nomad-inbox-tray.ps1",
+    "scripts\build-windows-installer.ps1",
     "scripts\nomad-inbox.ps1",
     "scripts\nomadmail-http.ps1",
     "scripts\nomadmail-mcp.ps1",
@@ -44,6 +46,7 @@ $required = @(
     "docs\runbooks\background-sync-and-tray.md",
     "docs\runbooks\archive-import.md",
     "docs\runbooks\agent-service.md",
+    "docs\runbooks\release.md",
     "docs\slo\nomadinbox-slo.md",
     "docs\governance\ARCHITECTURE_UPDATE_PROCESS.md",
     "docs\governance\WORKSPACE_STATE.md",
@@ -67,6 +70,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         $_ -match '^-DataDir/' -or
         $_ -match '^runtime/' -or
         $_ -match '^target/' -or
+        $_ -match '^dist/' -or
         $_ -match '^logs/' -or
         $_ -match '^downloads/' -or
         $_ -match '^\.kiro/' -or
@@ -87,7 +91,8 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
 $parseErrors = @()
 foreach ($psPath in @(
     (Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1"),
-    (Join-Path $repoRoot "scripts\build-nomad-inbox-tray.ps1")
+    (Join-Path $repoRoot "scripts\build-nomad-inbox-tray.ps1"),
+    (Join-Path $repoRoot "scripts\build-windows-installer.ps1")
 )) {
     $tokens = $null
     $errors = $null
@@ -111,6 +116,10 @@ $requiredTrayMarkers = @(
     "BuildMenuFromCache",
     "DoubleClick",
     "SettingsForm",
+    "StatusPopupForm",
+    "IconFactory",
+    "Open status popup",
+    "Refreshing status...",
     "BeginRefresh",
     "EnsureHttpServiceAsync",
     "RequestJsonAsync",

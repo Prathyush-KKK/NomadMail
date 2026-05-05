@@ -3,6 +3,7 @@ data/
 -DataDir/
 runtime/
 target/
+dist/
 logs/
 downloads/
 *.log

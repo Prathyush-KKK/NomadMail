@@ -20,9 +20,10 @@ NomadInbox is a local-first email operations layer for coding agents. It normali
 5. Fetch full message details only when needed.
 6. Draft replies or new mail without sending immediately.
 7. Send only after explicit user confirmation.
-8. Audit every mutating action.
-9. Remind users how much live and archived mail context is backed up.
-10. Expose mailbox status, sync, search, get, and import operations through MCP and local HTTP.
+8. Require double explicit confirmation before trash/delete operations.
+9. Audit every mutating action.
+10. Remind users how much live and archived mail context is backed up.
+11. Expose mailbox status, sync, search, get, action guidance, and import operations through MCP and local HTTP.
 11. Let Windows agents install a local helper so sync state and connected account config can be tracked from the user workspace.
 12. Parse ambiguous user/source times in the user's locale and time zone while storing normalized UTC timestamps.
 13. Answer latest-email questions only after a one-shot live sync against already configured/enabled accounts.

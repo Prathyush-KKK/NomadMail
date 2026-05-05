@@ -8,7 +8,7 @@ NomadInbox is a local-first mailbox visibility and action service. NomadMail is 
 
 Current workspace state:
 
-- NomadMail exposes agent guidance, startup system prompt, local message search, message lookup, provider/account discovery, one-shot sync, archive import, service status, and background worker controls.
+- NomadMail exposes agent guidance, startup system prompt, local message search, message lookup, permission-gated message action guidance, provider/account discovery, one-shot sync, archive import, service status, and background worker controls.
 - The startup system prompt is system-owned at prompts/nomadmail-startup.system.md.
 - On Windows, the PowerShell helper initializes ignored runtime state and account config without reading mail or starting auto sync.
 - On Windows, the tray controller keeps the local NomadMail HTTP service available at 127.0.0.1:8791 while the tray is running. MCP stdio is still launched by each calling agent.
@@ -25,7 +25,7 @@ When opening this workspace:
 2. Load prompts\nomadmail-startup.system.md or call nomadmail_get_startup_system_prompt.
 3. Refresh live status using NomadMail tools or service commands.
 4. Report current capabilities, storage boundaries, user locale/time-zone context when time scopes matter, approval-gated actions, Windows helper/tray status when applicable, and the safest next action.
-5. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval.
+5. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval. Draft email before send, and require double explicit confirmation before trash/delete.
 
 ## Session State Update Rule
 
@@ -41,18 +41,18 @@ The state file should capture durable workspace behavior and follow-ups. It shou
 
 ## Latest Session
 
-Title: Compiled Windows tray client
+Title: Message action guidance
 
 Status: completed
 
 Summary:
 
-- Replaced the blocking PowerShell tray UI with a compiled Windows tray client. The tray renders cached state only, starts or calls the existing NomadMail HTTP service asynchronously, and leaves provider sync and service logic in Node.js and PowerShell.
+- NomadMail now returns UI-ready mail action guidance after message discovery, with draft-before-send, explicit send approval, provider-runtime caveats, archive read-only handling, and double confirmation for trash/delete.
 
 Workspace revision:
 
 - Branch: main
-- HEAD: ec4c1c4
+- HEAD: 9bc7b8b
 
 ## Open Follow-Ups
 

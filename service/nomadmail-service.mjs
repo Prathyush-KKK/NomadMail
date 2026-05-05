@@ -13,7 +13,8 @@ const cliPath = join(repoRoot, "scripts", "nomad-inbox.ps1");
 const installerPath = join(repoRoot, "scripts", "install-windows-agent-helper.ps1");
 const startupSystemPromptPath = join(repoRoot, "prompts", "nomadmail-startup.system.md");
 const workspaceStatePath = join(repoRoot, "docs", "governance", "WORKSPACE_STATE.md");
-const serviceVersion = "0.1.0";
+const versionPath = join(repoRoot, "VERSION");
+const serviceVersion = readVersion();
 
 const jsonHeaders = {
   "content-type": "application/json; charset=utf-8",
@@ -33,6 +34,15 @@ const windowsToIanaTimeZones = new Map([
   ["China Standard Time", "Asia/Shanghai"],
   ["AUS Eastern Standard Time", "Australia/Sydney"],
 ]);
+
+function readVersion() {
+  try {
+    const version = readFileSync(versionPath, "utf8").trim();
+    return version || "0.1.0";
+  } catch {
+    return "0.1.0";
+  }
+}
 
 const tools = [
   {
@@ -210,6 +220,20 @@ const tools = [
     },
   },
   {
+    name: "nomadmail_get_message_actions",
+    description: "Return UI-ready, permission-gated mail actions for a discovered message. This does not send, delete, or mutate mail.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Optional NomadMail message id. Omit for general mail action guidance.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "nomadmail_get_backup_status",
     description: "Report how much live and imported email context is locally available.",
     inputSchema: {
@@ -331,7 +355,7 @@ function agentGuide() {
       "Resolve the user's locale and time zone before parsing relative or ambiguous dates. Store normalized timestamps as UTC ISO 8601, but present user-facing times in the user's locale and time zone.",
       "When the user asks for the latest email, newest mail, recent message, or latest email content, treat that read request as approval to run one request-scoped live sync against already configured/enabled accounts before answering.",
       "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations. Then report tray availability and ask before starting the compiled tray client.",
-      "If the user explicitly asks to install, start, or run the service on Windows, start the compiled tray client instead of starting only the raw HTTP server. The tray owns the long-running local HTTP agent service and its menu must not block on sync/status refresh.",
+      "If the user explicitly asks to install, start, or run the service on Windows, start the compiled tray client instead of starting only the raw HTTP server. The tray owns the long-running local HTTP agent service and its popup/menu must not block on sync/status refresh.",
       "Starting the tray is allowed only after user approval and must not turn on auto sync by itself.",
       "After service or tray setup succeeds, keep the response short: tell the user NomadMail is available from the NomadInbox system tray and agents can use the local service. Do not print endpoint lists, raw health JSON, process tables, or search results unless diagnostics were requested.",
       "On non-Windows, do not install the Windows helper or offer Outlook Desktop sync. Explain that the NomadMail MCP server is still Node-based and can expose local JSONL context tools, while live sync requires PowerShell Core plus a supported provider runtime or a future native provider adapter.",
@@ -339,7 +363,7 @@ function agentGuide() {
     ],
     mcpPortability: {
       serverRuntime: "Node.js MCP/HTTP service intended to start on any OS with Node.js.",
-      platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_search_messages", "nomadmail_get_message"],
+      platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_search_messages", "nomadmail_get_message", "nomadmail_get_message_actions"],
       hostRuntimeTools: ["nomadmail_health_check", "nomadmail_list_providers", "nomadmail_list_accounts", "nomadmail_sync_once", "nomadmail_get_latest_message", "nomadmail_get_backup_status", "nomadmail_get_service_status", "nomadmail_start_service", "nomadmail_stop_service", "nomadmail_import_archive"],
       hostRuntimeRequirement: "Provider sync and archive import currently delegate to the NomadInbox PowerShell core. Windows uses Windows PowerShell by default; non-Windows hosts need pwsh or a future native adapter.",
       windowsOnlyCapabilities: ["Outlook Desktop COM sync", "compiled system tray client", "Windows PowerShell helper install"]
@@ -367,10 +391,11 @@ function agentGuide() {
       msg: "MSG import is not implemented in this bootstrap. Convert to EML first."
     },
     liveSyncGuidance: [
-      "On Windows, offer the compiled tray client as a status and control surface after installing the helper. The compact tray menu can run Sync now, toggle auto sync, and show account status from cached state while refresh and sync run asynchronously. For new accounts, tell the user to ask an agent; the tray must not discover accounts or enable auto sync without approval.",
+      "On Windows, offer the compiled tray client as a status and control surface after installing the helper. The compact tray popup can refresh status, run Sync now, toggle auto sync, and show account status from cached state while refresh and sync run asynchronously. For new accounts, tell the user to ask an agent; the tray must not discover accounts or enable auto sync without approval.",
       "For Windows service-start requests, start or verify the tray and give a short tray status instead of a raw HTTP endpoint report.",
       "Use nomadmail_list_accounts before syncing and verify that only intended accounts are enabled.",
       "For latest-email questions, call nomadmail_get_latest_message with syncFirst=true, or run nomadmail_sync_once before searching live messages. If sync is blocked by disabled accounts, missing auth, or provider failure, say the latest email cannot be confirmed instead of presenting stale local data as definite.",
+      "After a message is discovered, show a short action menu instead of stopping at search results. Use nomadmail_get_message_actions for reply, reply all, forward, draft new mail, mark/flag/move/archive/trash options and their permission gates.",
       "Use nomadmail_sync_once for request-driven sync, or nomadmail_start_service only when the user explicitly wants background sync.",
       "Gmail API sync requires NOMADINBOX_GMAIL_ACCESS_TOKEN or a Gmail-scoped gcloud login.",
       "Outlook Graph sync requires NOMADINBOX_GRAPH_ACCESS_TOKEN or an Azure CLI Microsoft Graph token.",
@@ -395,10 +420,13 @@ function agentGuide() {
     ],
     safetyRules: [
       "Never send, reply, archive, trash, move, or mark mail through NomadMail without explicit action-time user confirmation.",
+      "Replies, forwards, and new mail must be drafted first. Send only after the user explicitly approves the saved draft or exact recipients, subject, and body.",
+      "Trash/delete actions require double explicit approval: first confirm intent, then ask for a final confirmation naming the message and mailbox effect before any delete/trash call.",
       "Imported archive mail is read-only context and has actionable=false.",
       "Do not import broad personal folders, authenticated cloud data, or mailbox exports unless the user has approved the exact source.",
       "Do not store OAuth tokens, secrets, raw mailbox exports, or generated message stores in git."
-    ]
+    ],
+    mailActionGuidance: mailActionGuide(null)
   };
 }
 
@@ -653,10 +681,11 @@ function messageTimestamp(record) {
 }
 
 function summarizeMessage(record, sourceType) {
+  const source = record.sourceType || sourceType;
   return {
     id: record.id,
     provider: record.provider,
-    sourceType: record.sourceType || sourceType,
+    sourceType: source,
     providerMessageId: record.providerMessageId || null,
     conversationId: record.conversationId || null,
     folder: record.folder || null,
@@ -670,6 +699,121 @@ function summarizeMessage(record, sourceType) {
     flagged: Boolean(record.flagged),
     actionable: record.actionable !== false,
     capabilities: Array.isArray(record.capabilities) ? record.capabilities : [],
+    actionMenu: compactMailActionMenu(record, source),
+  };
+}
+
+function providerActionCaveat(provider) {
+  if (provider === "outlook-desktop") {
+    return "Outlook Desktop actions may be unavailable unless Outlook is open in the signed-in Windows user session and COM automation can access the selected message.";
+  }
+  if (provider === "outlook-graph") {
+    return "Outlook Graph actions may be unavailable unless the token includes the required delegated write/send scopes, such as Mail.ReadWrite or Mail.Send.";
+  }
+  if (provider === "gmail-api") {
+    return "Gmail actions may be unavailable unless the account has approved non-readonly scopes. A gmail.readonly setup can sync/search but cannot draft, send, or mutate.";
+  }
+  if (provider === "archive-import") {
+    return "Imported archive messages are read-only context and cannot be replied to, moved, sent from, or deleted through NomadMail.";
+  }
+  return "Provider actions may be unavailable until the connected account supports the required write/send permissions.";
+}
+
+function mailActionPermissionModel() {
+  return {
+    draftFirst: "Replies, forwards, and new mail must be drafted before any send.",
+    sendApproval: "Send only after explicit user approval of the saved draft or the exact recipients, subject, and body.",
+    deleteApproval: "Trash/delete requires two explicit confirmations: intent first, then a final confirmation naming the message and mailbox effect.",
+    archiveBoundary: "Imported archive messages are read-only. Use live sync to locate a matching actionable provider message before offering mailbox actions.",
+    runtimeCaveat: "Actions might not complete if provider permissions or local runtime access are missing. Previous runs found Graph/export paths can be unavailable, and Outlook Desktop actions only work when the local Outlook profile is reachable.",
+  };
+}
+
+function compactMailActionMenu(record, sourceType) {
+  const provider = record.provider || "unknown";
+  const capabilities = Array.isArray(record.capabilities) ? record.capabilities : [];
+  const actionable = record.actionable !== false && provider !== "archive-import" && sourceType !== "archive-import";
+  if (!actionable) {
+    return {
+      available: false,
+      prompt: "This message is read-only context. Ask an agent to find the matching live message before taking mailbox actions.",
+      quickActions: ["summarize", "extract follow-up", "find matching live message"],
+      blockedReason: "archive-or-non-actionable-message",
+      permissionNote: mailActionPermissionModel().archiveBoundary,
+    };
+  }
+
+  const quickActions = [];
+  if (capabilities.includes("reply")) quickActions.push("draft reply");
+  if (capabilities.includes("replyAll")) quickActions.push("draft reply all");
+  if (capabilities.includes("forward")) quickActions.push("draft forward");
+  quickActions.push("draft new mail");
+  if (capabilities.includes("markRead") || capabilities.includes("markUnread")) quickActions.push("mark read/unread");
+  if (capabilities.includes("flag") || capabilities.includes("unflag") || capabilities.includes("star")) quickActions.push("flag/star");
+  if (capabilities.includes("move")) quickActions.push("move");
+  if (capabilities.includes("archive")) quickActions.push("archive");
+  if (capabilities.includes("trash")) quickActions.push("trash/delete with double confirmation");
+
+  return {
+    available: true,
+    prompt: "Offer the user quick actions: draft a reply, draft a new mail, or manage the message. Draft/send/delete rules still apply.",
+    quickActions,
+    permissionNote: "Draft before send. Send needs explicit approval. Trash/delete needs double explicit approval.",
+    providerCaveat: providerActionCaveat(provider),
+  };
+}
+
+function mailActionGuide(record) {
+  const permissionModel = mailActionPermissionModel();
+  const provider = record?.provider || null;
+  const sourceType = record?.sourceType || null;
+  const capabilities = Array.isArray(record?.capabilities) ? record.capabilities : [];
+  const actionable = Boolean(record) && record.actionable !== false && provider !== "archive-import" && sourceType !== "archive-import";
+  const liveActionPreconditions = [
+    "The message must be from live sync, not archive import.",
+    "The provider must expose the requested capability for that message.",
+    "The account must have the required provider permission or local runtime access.",
+    "The user must approve the exact action at action time.",
+  ];
+
+  return {
+    actionable,
+    provider,
+    sourceType,
+    capabilities,
+    userPrompt: actionable
+      ? "What would you like to do with this email: draft reply, reply all, forward, draft new mail, mark read/unread, flag, move/archive, or trash?"
+      : "This message is not currently actionable. I can summarize it or help locate the matching live message before any mailbox action.",
+    primaryActions: [
+      {
+        id: "replyDraft",
+        label: "Draft reply",
+        enabledWhen: "live message with reply capability",
+        steps: ["Ask for the reply intent or draft text.", "Create or present a draft.", "Send only after explicit approval."],
+      },
+      {
+        id: "replyAllDraft",
+        label: "Draft reply all",
+        enabledWhen: "live message with replyAll capability",
+        steps: ["Confirm reply-all is intended.", "Create or present a draft.", "Send only after explicit approval."],
+      },
+      {
+        id: "composeDraft",
+        label: "Draft new mail",
+        enabledWhen: "connected account supports draft creation",
+        steps: ["Collect recipients, subject, and body.", "Create or present a draft.", "Send only after explicit approval."],
+      },
+    ],
+    secondaryActions: [
+      { id: "markRead", label: "Mark read/unread", confirmation: "explicit approval required" },
+      { id: "flag", label: "Flag/star", confirmation: "explicit approval required" },
+      { id: "move", label: "Move/archive", confirmation: "explicit approval required" },
+      { id: "trash", label: "Trash/delete", confirmation: "double explicit approval required" },
+    ],
+    permissionModel,
+    liveActionPreconditions,
+    providerCaveat: provider ? providerActionCaveat(provider) : "Provider-specific action support must be checked after a live message is selected.",
+    implementationNote: "NomadMail currently exposes the action guide and local discovery context. Mutation tools must still be added behind this permission model before agents can execute them through MCP/HTTP.",
   };
 }
 
@@ -821,6 +965,7 @@ async function getLatestMessage(args = {}) {
       message: null,
       contentAvailable: false,
       contentPreview: null,
+      actionGuide: mailActionGuide(null),
       reason: "No live account sync completed. The latest email cannot be confirmed from local state.",
     };
   }
@@ -837,6 +982,7 @@ async function getLatestMessage(args = {}) {
     message: selected ? summarizeMessage(selected, "live-sync") : null,
     contentAvailable: selected ? hasMessageContent(selected) : false,
     contentPreview: selected ? contentPreview(selected) : null,
+    actionGuide: selected ? mailActionGuide(selected) : mailActionGuide(null),
     latestLiveMessageWithoutContent: !selected && requireContent && latest ? summarizeMessage(latest, "live-sync") : null,
   };
 }
@@ -846,22 +992,58 @@ async function getMessage(args = {}) {
     throw new Error("id is required");
   }
 
-  for (const path of [messagesPath(), archiveMessagesPath()]) {
-    for await (const record of readJsonLines(path)) {
-      if (record.id === args.id) {
-        return {
-          status: "ok",
-          service: "NomadMail",
-          message: record,
-        };
-      }
-    }
+  const found = await findMessageRecord(args.id);
+  if (found) {
+    return {
+      status: "ok",
+      service: "NomadMail",
+      message: found.record,
+      actionGuide: mailActionGuide(found.record),
+    };
   }
 
   return {
     status: "notFound",
     service: "NomadMail",
     id: args.id,
+  };
+}
+
+async function findMessageRecord(id) {
+  for (const path of [messagesPath(), archiveMessagesPath()]) {
+    for await (const record of readJsonLines(path)) {
+      if (record.id === id) {
+        return { record, path };
+      }
+    }
+  }
+  return null;
+}
+
+async function getMessageActions(args = {}) {
+  if (!args.id) {
+    return {
+      status: "ok",
+      service: "NomadMail",
+      actionGuide: mailActionGuide(null),
+    };
+  }
+
+  const found = await findMessageRecord(args.id);
+  if (!found) {
+    return {
+      status: "notFound",
+      service: "NomadMail",
+      id: args.id,
+      actionGuide: mailActionGuide(null),
+    };
+  }
+
+  return {
+    status: "ok",
+    service: "NomadMail",
+    message: summarizeMessage(found.record, found.record.sourceType || "live-sync"),
+    actionGuide: mailActionGuide(found.record),
   };
 }
 
@@ -976,6 +1158,8 @@ async function callTool(name, args = {}) {
       return getLatestMessage(args);
     case "nomadmail_get_message":
       return getMessage(args);
+    case "nomadmail_get_message_actions":
+      return getMessageActions(args);
     case "nomadmail_get_backup_status":
       return safeRunCli(["backup", "status"]);
     case "nomadmail_get_service_status":
@@ -1239,6 +1423,15 @@ async function handleHttp(req, res) {
       }));
       return;
     }
+    if (req.method === "GET" && url.pathname === "/message-actions") {
+      sendJson(res, 200, await getMessageActions({ id: url.searchParams.get("id") || "" }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/messages/") && url.pathname.endsWith("/actions")) {
+      const id = decodeURIComponent(url.pathname.slice("/messages/".length, -"/actions".length));
+      sendJson(res, 200, await getMessageActions({ id }));
+      return;
+    }
     if (req.method === "GET" && url.pathname.startsWith("/messages/")) {
       sendJson(res, 200, await getMessage({ id: decodeURIComponent(url.pathname.slice("/messages/".length)) }));
       return;
@@ -1279,6 +1472,7 @@ async function selfTest() {
   const providers = await safeRunCli(["providers", "list"]);
   const search = await searchMessages({ query: "", limit: 1 });
   const latest = await getLatestMessage({ syncFirst: false });
+  const actionGuide = await getMessageActions({});
   const guide = agentGuide();
   const prompt = startupSystemPrompt();
   const state = workspaceState();
@@ -1291,6 +1485,7 @@ async function selfTest() {
     providerCount: providers?.providers?.length || 0,
     searchStatus: search.status,
     latestMessageStatus: latest.status,
+    messageActionsStatus: actionGuide.status,
     agentGuideStatus: guide.status,
     startupSystemPromptStatus: prompt.status,
     workspaceStateStatus: state.status,

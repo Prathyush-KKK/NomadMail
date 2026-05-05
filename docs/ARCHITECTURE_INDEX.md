@@ -17,6 +17,7 @@ C:\Users\prat\Documents\osm\NomadInbox
 | Service catalog | `docs/service-catalog/` | Services/processes, status, ownership, auth model |
 | Process catalog | `docs/processes/process-catalog.md` | End-to-end operational process inventory |
 | Runbooks | `docs/runbooks/` | Operating procedures and troubleshooting |
+| Release packaging | `docs/runbooks/release.md` | Versioned Windows installer/package flow |
 | SLOs/SLIs | `docs/slo/nomadinbox-slo.md` | Local reliability targets and measurements |
 | OpenAPI | `api/openapi/nomadinbox.v1.yaml` | Local HTTP service contract |
 | AsyncAPI | `api/asyncapi/nomadinbox-events.v1.yaml` | Local JSONL/event contract |
@@ -25,6 +26,7 @@ C:\Users\prat\Documents\osm\NomadInbox
 | Schemas | `schemas/` | Agent-readable message/action contracts |
 | NomadMail service | `service/nomadmail-service.mjs` | MCP and local HTTP callable agent runtime |
 | Compiled tray client | `src/NomadInbox.Tray/` | Windows tray UI source; compiled to ignored `target/NomadInboxTray/NomadInboxTray.exe` |
+| Version file | `VERSION` | Shared app version for service health and release packages |
 
 ## Required Update Rule
 

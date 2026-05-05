@@ -32,7 +32,12 @@ if ([string]::IsNullOrWhiteSpace($DataDir)) {
 }
 $DataDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DataDir)
 
-$exePath = Join-Path $RepoRoot "target\NomadInboxTray\NomadInboxTray.exe"
+$exePath = if ([string]::IsNullOrWhiteSpace($env:NOMADINBOX_TRAY_EXE)) {
+    Join-Path $RepoRoot "target\NomadInboxTray\NomadInboxTray.exe"
+} else {
+    $env:NOMADINBOX_TRAY_EXE
+}
+$exePath = [System.IO.Path]::GetFullPath($exePath)
 $sourcePath = Join-Path $RepoRoot "src\NomadInbox.Tray\NomadInboxTray.cs"
 $buildScript = Join-Path $RepoRoot "scripts\build-nomad-inbox-tray.ps1"
 

@@ -89,6 +89,32 @@ sequenceDiagram
     Core->>Audit: action=sendDraft confirmed=true
 ```
 
+## Message Action Guidance And Delete Gate
+
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Service as NomadMail Service
+    participant Store as Message Store
+    participant User
+    participant Safety
+    participant Provider
+    participant Audit
+
+    Agent->>Service: nomadmail_get_message_actions(messageId)
+    Service->>Store: read live/archive message projection
+    Service-->>Agent: action menu plus permission gates
+    Agent-->>User: Offer draft reply, draft new mail, mark/flag/move/archive, trash/delete
+    User->>Agent: Choose trash/delete
+    Agent-->>User: First confirmation: confirm deletion intent
+    User->>Agent: Confirm intent
+    Agent-->>User: Final confirmation naming message and mailbox effect
+    User->>Agent: Final confirm
+    Agent->>Safety: verify double confirmation
+    Safety-->>Provider: allow trash/delete only after both confirmations
+    Provider-->>Audit: action=trash/delete confirmationRequirement=double
+```
+
 ## Optional Background Sync Flow
 
 ```mermaid
@@ -102,11 +128,11 @@ sequenceDiagram
     participant Core
     participant Store
 
-    User->>Tray: Open tray menu
+    User->>Tray: Open tray popup
     Tray->>Cache: Read cached in-memory/file status
-    Tray-->>User: Show menu immediately
+    Tray-->>User: Show popup immediately
     User->>Tray: Start background sync
-    Tray-->>User: Return menu control immediately
+    Tray-->>User: Return popup control immediately
     Tray->>HTTP: POST /service/start asynchronously
     HTTP->>CLI: service start
     CLI->>Worker: launch user-session process

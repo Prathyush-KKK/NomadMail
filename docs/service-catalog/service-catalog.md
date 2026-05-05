@@ -7,8 +7,10 @@
 | NomadMail HTTP Service | Local REST-style service | Bootstrapped | Local operator | High |
 | Workspace State | Agent resume state document | Bootstrapped | Local operator | Medium |
 | Windows Agent Helper | Local PowerShell helper install | Bootstrapped | Local operator | Medium |
+| Windows Release Packager | Versioned installer zip and manifest builder | Bootstrapped | Local operator | Medium |
 | Locale Time Context | User culture/time-zone normalization | Bootstrapped | Local operator | High |
 | Latest Email Freshness Gate | One-shot sync before latest-email answers | Bootstrapped | Local operator | High |
+| Message Action Guidance | UI-ready mail action menu and permission gates after message discovery | Bootstrapped | Local operator | High |
 | NomadInbox Core | Provider catalog, account config, safety rules, schemas | Bootstrapped | Local operator | High |
 | Background Sync Worker | User-session polling for enabled accounts | Bootstrapped | Local operator | Medium |
 | Compiled System Tray Client | Local status/settings UI | Bootstrapped | Local operator | Medium |

@@ -73,6 +73,21 @@ services:
     notes:
       - Windows-only.
       - Does not connect accounts, read mailbox data, or start auto sync by default.
+  - name: windows-release-packager
+    type: local-release-builder
+    status: bootstrapped
+    criticality: medium
+    interfaces:
+      - scripts/build-windows-installer.ps1
+      - VERSION
+      - dist/NomadInbox-<version>-windows.zip
+      - dist/NomadInbox-<version>-windows.manifest.json
+    responsibilities:
+      - build-versioned-windows-package
+      - copy-tracked-product-files-only
+      - include-compiled-tray-client
+      - publish-package-sha256-manifest
+      - exclude-runtime-data-and-agent-scratch
   - name: nomadinbox-core
     type: local-core
     status: bootstrapped

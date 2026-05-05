@@ -10,6 +10,40 @@ channels:
   data/actions.jsonl:
     subscribe:
       summary: Audit records for mutating actions
+      message:
+        name: ActionAuditRecord
+        payload:
+          type: object
+          properties:
+            actionId:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+            provider:
+              type: string
+            messageId:
+              type: string
+            draftId:
+              type: string
+            actionType:
+              type: string
+            requiresUserConfirmation:
+              type: boolean
+            confirmedByUser:
+              type: boolean
+            confirmationRequirement:
+              type: string
+              enum: [none, single, double]
+              description: Trash/delete actions require double explicit confirmation.
+            status:
+              type: string
+            input:
+              type: object
+            result:
+              type: object
+            error:
+              type: string
   data/sync-status.json:
     subscribe:
       summary: Latest background sync worker state and per-account sync results
