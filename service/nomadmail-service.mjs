@@ -28,6 +28,29 @@ const tools = [
     },
   },
   {
+    name: "nomadmail_install_windows_helper",
+    description: "Install the Windows PowerShell helper that initializes ignored runtime state and lets agents track sync operations and connected account config. Returns an explicit unsupported-platform response on non-Windows hosts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        dataDir: {
+          type: "string",
+          description: "Optional local NomadInbox data directory for messages, sync status, and action logs.",
+        },
+        installRoot: {
+          type: "string",
+          description: "Optional local folder where the helper launcher and status file should be written.",
+        },
+        startTray: {
+          type: "boolean",
+          default: false,
+          description: "Start the Windows tray app after installing the helper. Use only after user approval.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "nomadmail_health_check",
     description: "Check NomadMail local service, provider configuration, and background worker status.",
     inputSchema: {
@@ -206,6 +229,20 @@ function agentGuide() {
     status: "ok",
     service: "NomadMail",
     purpose: "Agent guidance for parsing email backups, syncing live mail, and updating a target repository index.",
+    runtime: runtimeInfo(),
+    startupGuidance: [
+      "When opened in a user workspace, first detect the operating system and report the platform-specific setup path.",
+      "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations.",
+      "On non-Windows, do not install the Windows helper or offer Outlook Desktop sync. Explain that the NomadMail MCP server is still Node-based and can expose local JSONL context tools, while live sync requires PowerShell Core plus a supported provider runtime or a future native provider adapter.",
+      "Never discover tokens, profiles, exports, connected accounts, or mailbox contents until the user approves the exact source and scope."
+    ],
+    mcpPortability: {
+      serverRuntime: "Node.js MCP/HTTP service intended to start on any OS with Node.js.",
+      platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_search_messages", "nomadmail_get_message"],
+      hostRuntimeTools: ["nomadmail_health_check", "nomadmail_list_providers", "nomadmail_list_accounts", "nomadmail_sync_once", "nomadmail_get_backup_status", "nomadmail_get_service_status", "nomadmail_start_service", "nomadmail_stop_service", "nomadmail_import_archive"],
+      hostRuntimeRequirement: "Provider sync and archive import currently delegate to the NomadInbox PowerShell core. Windows uses Windows PowerShell by default; non-Windows hosts need pwsh or a future native adapter.",
+      windowsOnlyCapabilities: ["Outlook Desktop COM sync", "system tray controller", "Windows PowerShell helper install"]
+    },
     storageBoundary: {
       defaultDataDir: join(repoRoot, "data"),
       activeDataDir: dataDir(),
@@ -277,8 +314,37 @@ function archiveIndexPath() {
   return join(dataDir(), "archive-index.jsonl");
 }
 
+function runtimeInfo() {
+  const isWindows = process.platform === "win32";
+  return {
+    nodePlatform: process.platform,
+    nodeVersion: process.version,
+    isWindows,
+    repoRoot,
+    dataDir: dataDir(),
+    powershellCommand: powershellExe(),
+    windowsHelperSupported: isWindows,
+    outlookDesktopSupported: isWindows,
+    mcpServerPortable: true,
+    note: isWindows
+      ? "Windows hosts can install the PowerShell helper, use Outlook Desktop COM, and run the tray controller."
+      : "Non-Windows hosts can run the Node MCP server and local JSONL context tools. Provider sync/import needs pwsh or a future native adapter; Outlook Desktop and tray are Windows-only.",
+  };
+}
+
 function powershellExe() {
-  return process.env.NOMADMAIL_POWERSHELL || process.env.NOMADINBOX_POWERSHELL || "powershell.exe";
+  return process.env.NOMADMAIL_POWERSHELL || process.env.NOMADINBOX_POWERSHELL || (process.platform === "win32" ? "powershell.exe" : "pwsh");
+}
+
+function platformResponse(action, message) {
+  return {
+    status: "unsupportedPlatform",
+    service: "NomadMail",
+    action,
+    platform: process.platform,
+    runtime: runtimeInfo(),
+    message,
+  };
 }
 
 function parseJsonOutput(stdout) {
@@ -321,7 +387,21 @@ function runCli(args) {
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString("utf8");
     });
-    child.on("error", reject);
+    child.on("error", (error) => {
+      const wrapped = new Error(`NomadInbox CLI is unavailable through ${powershellExe()}: ${error.message}`);
+      wrapped.details = {
+        status: "unavailable",
+        service: "NomadInbox",
+        code: error.code || null,
+        command: powershellExe(),
+        args,
+        runtime: runtimeInfo(),
+        guidance: process.platform === "win32"
+          ? "Install or repair Windows PowerShell, then run scripts/install-windows-agent-helper.ps1."
+          : "Install PowerShell Core as pwsh for CLI-backed tools, or use platform-independent NomadMail MCP tools for local JSONL search and message lookup.",
+      };
+      reject(wrapped);
+    });
     child.on("close", (code) => {
       let parsed = null;
       try {
@@ -342,6 +422,20 @@ function runCli(args) {
       resolvePromise(parsed);
     });
   });
+}
+
+async function safeRunCli(args) {
+  try {
+    return await runCli(args);
+  } catch (error) {
+    return {
+      status: "unavailable",
+      service: "NomadInbox",
+      command: args.join(" "),
+      error: error.message,
+      details: error.details || null,
+    };
+  }
 }
 
 function normalizeLimit(value) {
@@ -517,10 +611,11 @@ async function getMessage(args = {}) {
 
 async function healthCheck() {
   const [config, providers, serviceStatus] = await Promise.all([
-    runCli(["config", "status"]),
-    runCli(["providers", "list"]),
-    runCli(["service", "status"]),
+    safeRunCli(["config", "status"]),
+    safeRunCli(["providers", "list"]),
+    safeRunCli(["service", "status"]),
   ]);
+  const cliAvailable = [config, providers, serviceStatus].every((item) => item?.status !== "unavailable");
 
   return {
     status: "ok",
@@ -529,6 +624,8 @@ async function healthCheck() {
     coreService: "NomadInbox",
     repoRoot,
     dataDir: dataDir(),
+    runtime: runtimeInfo(),
+    cliAvailable,
     config,
     providers: providers?.providers || [],
     worker: serviceStatus?.worker || "unknown",
@@ -541,7 +638,7 @@ async function syncOnce(args = {}) {
   if (args.accountId) {
     cliArgs.push("--account-id", String(args.accountId));
   }
-  return runCli(cliArgs);
+  return safeRunCli(cliArgs);
 }
 
 async function startService(args = {}) {
@@ -549,7 +646,7 @@ async function startService(args = {}) {
   if (args.intervalSeconds) {
     cliArgs.push("--interval-seconds", String(args.intervalSeconds));
   }
-  return runCli(cliArgs);
+  return safeRunCli(cliArgs);
 }
 
 async function importArchive(args = {}) {
@@ -574,19 +671,42 @@ async function importArchive(args = {}) {
   if (args.dryRun) {
     cliArgs.push("--dry-run");
   }
-  return runCli(cliArgs);
+  return safeRunCli(cliArgs);
+}
+
+async function installWindowsHelper(args = {}) {
+  if (process.platform !== "win32") {
+    return platformResponse(
+      "install-windows-helper",
+      "The Windows PowerShell helper, tray controller, and Outlook Desktop sync are Windows-only. Keep using the platform-independent NomadMail MCP server for local JSONL search/message tools, and configure provider sync only when this host has PowerShell Core and a supported provider runtime.",
+    );
+  }
+
+  const cliArgs = ["install", "windows-helper"];
+  if (args.dataDir) {
+    cliArgs.push("--data-dir", String(args.dataDir));
+  }
+  if (args.installRoot) {
+    cliArgs.push("--install-root", String(args.installRoot));
+  }
+  if (args.startTray) {
+    cliArgs.push("--start-tray");
+  }
+  return safeRunCli(cliArgs);
 }
 
 async function callTool(name, args = {}) {
   switch (name) {
     case "nomadmail_get_agent_guide":
       return agentGuide();
+    case "nomadmail_install_windows_helper":
+      return installWindowsHelper(args);
     case "nomadmail_health_check":
       return healthCheck();
     case "nomadmail_list_providers":
-      return runCli(["providers", "list"]);
+      return safeRunCli(["providers", "list"]);
     case "nomadmail_list_accounts":
-      return runCli(["accounts", "list"]);
+      return safeRunCli(["accounts", "list"]);
     case "nomadmail_sync_once":
       return syncOnce(args);
     case "nomadmail_search_messages":
@@ -594,13 +714,13 @@ async function callTool(name, args = {}) {
     case "nomadmail_get_message":
       return getMessage(args);
     case "nomadmail_get_backup_status":
-      return runCli(["backup", "status"]);
+      return safeRunCli(["backup", "status"]);
     case "nomadmail_get_service_status":
-      return runCli(["service", "status"]);
+      return safeRunCli(["service", "status"]);
     case "nomadmail_start_service":
       return startService(args);
     case "nomadmail_stop_service":
-      return runCli(["service", "stop"]);
+      return safeRunCli(["service", "stop"]);
     case "nomadmail_import_archive":
       return importArchive(args);
     default:
@@ -793,12 +913,16 @@ async function handleHttp(req, res) {
       sendJson(res, 200, agentGuide());
       return;
     }
+    if (req.method === "POST" && url.pathname === "/install/windows-helper") {
+      sendJson(res, 200, await installWindowsHelper(await readBody(req)));
+      return;
+    }
     if (req.method === "GET" && url.pathname === "/providers") {
-      sendJson(res, 200, await runCli(["providers", "list"]));
+      sendJson(res, 200, await safeRunCli(["providers", "list"]));
       return;
     }
     if (req.method === "GET" && url.pathname === "/accounts") {
-      sendJson(res, 200, await runCli(["accounts", "list"]));
+      sendJson(res, 200, await safeRunCli(["accounts", "list"]));
       return;
     }
     if (req.method === "POST" && url.pathname === "/sync/once") {
@@ -810,7 +934,7 @@ async function handleHttp(req, res) {
       return;
     }
     if (req.method === "GET" && url.pathname === "/service/status") {
-      sendJson(res, 200, await runCli(["service", "status"]));
+      sendJson(res, 200, await safeRunCli(["service", "status"]));
       return;
     }
     if (req.method === "POST" && url.pathname === "/service/start") {
@@ -818,15 +942,15 @@ async function handleHttp(req, res) {
       return;
     }
     if (req.method === "POST" && url.pathname === "/service/stop") {
-      sendJson(res, 200, await runCli(["service", "stop"]));
+      sendJson(res, 200, await safeRunCli(["service", "stop"]));
       return;
     }
     if (req.method === "GET" && url.pathname === "/backup/status") {
-      sendJson(res, 200, await runCli(["backup", "status"]));
+      sendJson(res, 200, await safeRunCli(["backup", "status"]));
       return;
     }
     if (req.method === "GET" && url.pathname === "/import/status") {
-      sendJson(res, 200, await runCli(["import", "status"]));
+      sendJson(res, 200, await safeRunCli(["import", "status"]));
       return;
     }
     if (req.method === "GET" && url.pathname === "/messages") {
@@ -877,13 +1001,15 @@ function startHttp(port, host) {
 }
 
 async function selfTest() {
-  const providers = await runCli(["providers", "list"]);
+  const providers = await safeRunCli(["providers", "list"]);
   const search = await searchMessages({ query: "", limit: 1 });
   const guide = agentGuide();
   return {
     status: "ok",
     service: "NomadMail",
     toolCount: tools.length,
+    runtime: runtimeInfo(),
+    cliAvailable: providers?.status !== "unavailable",
     providerCount: providers?.providers?.length || 0,
     searchStatus: search.status,
     agentGuideStatus: guide.status,

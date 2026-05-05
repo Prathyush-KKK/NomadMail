@@ -6,6 +6,7 @@ $required = @(
     ".gitignore",
     "config\nomad-inbox.example.ps1",
     "config\accounts.example.json",
+    "scripts\install-windows-agent-helper.ps1",
     "scripts\nomad-inbox.ps1",
     "scripts\nomadmail-http.ps1",
     "scripts\nomadmail-mcp.ps1",

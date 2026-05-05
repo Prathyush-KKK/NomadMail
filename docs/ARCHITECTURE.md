@@ -39,6 +39,13 @@ the same local contracts to different agents through:
 - Local HTTP on `127.0.0.1:8791` via `scripts/nomadmail-http.ps1`.
 - Existing direct PowerShell CLI calls via `scripts/nomad-inbox.ps1`.
 
+The MCP/HTTP service runtime is Node.js and should remain platform independent.
+Provider sync and archive import currently delegate to the NomadInbox PowerShell
+core. Windows agents install the PowerShell helper to initialize ignored runtime
+state and track connected account config. Non-Windows agents keep the MCP server
+available for local JSONL context tools and return clear unsupported-runtime
+guidance for Windows-only tray and Outlook Desktop operations.
+
 ## Runtime Data
 
 Runtime data is local and ignored by git:
@@ -66,6 +73,8 @@ The tracked `config/accounts.example.json` shows the shape users can copy and cu
 
 NomadMail currently exposes these MCP tools:
 
+- `nomadmail_get_agent_guide`
+- `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
 - `nomadmail_list_accounts`

@@ -25,6 +25,28 @@ paths:
       responses:
         "200":
           description: Healthy
+  /install/windows-helper:
+    post:
+      operationId: nomadmailInstallWindowsHelper
+      summary: Install the Windows PowerShell helper for sync and account tracking
+      description: Returns unsupportedPlatform on non-Windows hosts. The helper initializes ignored local runtime state but does not connect accounts, read mailbox data, or start auto sync unless requested.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dataDir:
+                  type: string
+                installRoot:
+                  type: string
+                startTray:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Install result or unsupported-platform response
   /providers:
     get:
       operationId: nomadmailListProviders

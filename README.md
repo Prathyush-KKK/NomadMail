@@ -24,7 +24,7 @@ Core principles:
 - Provider-specific message IDs are preserved.
 - Local runtime data is not pushed to GitHub.
 
-## Easy Setup With An AI Agent Workspace
+## Start With An AI Agent
 
 Open this repository in your AI agent workspace:
 
@@ -32,41 +32,36 @@ Open this repository in your AI agent workspace:
 C:\Users\prat\Documents\osm\NomadInbox
 ```
 
-Then ask the agent:
+Use this startup command:
 
 ```text
-I want to try NomadInbox/NomadMail.
+Set up NomadInbox/NomadMail as my local email context service.
 
-First verify setup, validation, provider status, account status, and git ignore boundaries.
-Do not connect accounts, scan exports, read mailbox data, or start auto sync until I approve.
+Use case: make my Gmail, Outlook, or local email exports searchable for agents while keeping mailbox data local and out of GitHub.
 
-Show me the safe next choices:
-- Gmail API
-- Outlook Graph
-- Outlook Desktop
-- local email export import
-- tray app with auto sync
+Do this now:
+1. Detect the operating system.
+2. If this is Windows, install the NomadInbox PowerShell helper so sync operations, connected account config, status files, and local message stores can be tracked. Do not start auto sync yet.
+3. If this is not Windows, do not install the Windows helper or offer Outlook Desktop sync. Explain that the NomadMail MCP server is platform-independent for agent tool access, and that live provider sync needs PowerShell Core plus a supported provider runtime or a future native adapter.
+4. Verify repository setup, NomadMail service health, provider availability, account config, and git ignore boundaries.
+5. Report what sources are available on this machine: Outlook Desktop, Outlook Graph, Gmail API, and local email exports.
+6. Ask me which one source to connect first and what scope to use.
+7. After I approve, configure only that source, run one small sync or read-only import, and show message counts, failures, storage location, and next actions.
+8. Offer tray auto sync only after the first approved sync works.
+
+Do not read mailbox data, scan exports, discover tokens, enable accounts, store full bodies, save attachments, send mail, mutate mail, or start auto sync until I explicitly approve that action.
 ```
 
-The agent should:
+What the agent can do with NomadInbox:
 
-- verify that runtime data and secrets are ignored by git
-- check whether Gmail, Graph, or Outlook Desktop are available
-- ask before discovering tokens, profiles, exports, or account data
-- keep broad mailbox access, body storage, attachments, and auto sync as explicit choices
-- use `NOMADINBOX_DATA_DIR` when you want data staged somewhere other than NomadInbox's default local store
-
-## Quick Trial Flow
-
-Use the agent workspace to run a safe status check first. After that, choose one path:
-
-- **Outlook Desktop** if you already have Outlook open and signed in on Windows.
-- **Outlook Graph** if you want Microsoft 365 mail through Graph.
-- **Gmail API** if you want Gmail or Google Workspace mail.
-- **Local export import** if you already have EML, MBOX, or NomadMail JSONL backups.
-- **Tray auto sync** if you want a system-tray toggle for background sync after accounts are connected.
-
-The tray app can guide users back to the agent when no account is connected, and can start or stop the background worker once accounts are enabled.
+- connect one approved Gmail or Outlook source
+- sync a small approved mailbox scope into the local ignored store
+- import approved email backups as read-only context
+- search local mail context and fetch cited messages
+- report sync status, backup counts, worker state, and storage location
+- start the tray app and turn on auto sync after accounts are connected
+- stage data in another local folder with `NOMADINBOX_DATA_DIR`
+- expose the same local context tools to other agent chats through the platform-independent NomadMail MCP server
 
 ## Storage And Privacy
 
@@ -103,6 +98,8 @@ NomadMail exposes NomadInbox to agents through:
 The service supports provider/account discovery, one-shot sync, local message search, message lookup, backup status, service status, background worker start/stop, agent guidance, and read-only archive import.
 
 Agents should call `nomadmail_get_agent_guide` or HTTP `/agent-guide` before syncing mail or parsing email backups for another repository.
+
+The MCP server is a Node.js service intended to start on any OS, including direct launch with `node service/nomadmail-service.mjs mcp`. Windows agents should install the PowerShell helper for sync/account tracking. Non-Windows agents should keep using MCP for local JSONL context tools and return a clear unsupported-runtime response for Windows-only helper, tray, and Outlook Desktop operations.
 
 ## Repository Map
 

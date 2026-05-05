@@ -18,6 +18,12 @@ try {
     $accounts = & $cli accounts list | ConvertFrom-Json
     if (@($accounts.accounts).Count -lt 3) { throw "expected account templates" }
 
+    $installRoot = Join-Path $testRoot "agent-helper"
+    $install = & $cli install windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $installRoot | ConvertFrom-Json
+    if ($install.status -ne "ok" -or -not (Test-Path -LiteralPath $install.helperPath) -or -not (Test-Path -LiteralPath $install.statusPath)) {
+        throw "windows helper install failed"
+    }
+
     $singleSync = & $cli sync once --account-id personal-gmail | ConvertFrom-Json
     if ($singleSync.status -ne "ok" -or $singleSync.accountCount -ne 1) { throw "account-scoped sync failed" }
 
@@ -61,7 +67,7 @@ This sample validates archive ingestion without using real mailbox exports.
 
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "agent service self-test", "agent guide")
+        tests = @("doctor", "providers list", "accounts list", "install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "agent service self-test", "agent guide")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {

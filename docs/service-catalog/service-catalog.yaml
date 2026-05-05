@@ -12,12 +12,14 @@ services:
     criticality: high
     interfaces:
       - mcp-stdio
+      - node
       - powershell-launcher
       - service/nomadmail-service.mjs
     responsibilities:
       - expose-agent-tools
       - wrap-nomadinbox-cli
       - search-local-message-store
+      - return-platform-runtime-guidance
       - preserve-send-confirmation-boundary
   - name: nomadmail-http-service
     type: local-http-service
@@ -31,6 +33,23 @@ services:
       - expose-local-rest-api
       - support-non-mcp-agents
       - wrap-nomadinbox-cli
+      - return-platform-runtime-guidance
+  - name: windows-agent-helper
+    type: local-installer
+    status: bootstrapped
+    criticality: medium
+    interfaces:
+      - scripts/install-windows-agent-helper.ps1
+      - scripts/nomad-inbox.ps1 install windows-helper
+      - nomadmail_install_windows_helper
+    responsibilities:
+      - initialize-ignored-runtime-state
+      - initialize-local-account-config
+      - install-helper-launcher
+      - publish-helper-status
+    notes:
+      - Windows-only.
+      - Does not connect accounts, read mailbox data, or start auto sync by default.
   - name: nomadinbox-core
     type: local-core
     status: bootstrapped

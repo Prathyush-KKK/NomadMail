@@ -10,6 +10,14 @@ Use MCP when an agent supports stdio MCP servers:
 .\scripts\nomadmail-mcp.ps1
 ```
 
+Cross-platform agents can also launch the Node service directly:
+
+```bash
+node service/nomadmail-service.mjs mcp
+```
+
+The MCP server itself is a Node.js process and is intended to start on any OS with Node.js. CLI-backed provider tools delegate to the NomadInbox PowerShell core. On Windows, install the Windows helper first so sync state and connected accounts can be tracked. On non-Windows, the agent should explain that local JSONL context tools can still work, while live sync/import needs PowerShell Core (`pwsh`) plus a supported provider runtime or a future native adapter.
+
 Client command shape:
 
 ```json
@@ -28,6 +36,7 @@ Client command shape:
 Primary tools:
 
 - `nomadmail_get_agent_guide`
+- `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
 - `nomadmail_list_accounts`
@@ -59,6 +68,13 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8791/sync/once -Body '{"accountI
 ## Guidance for Calling Agents
 
 Other agents should call `nomadmail_get_agent_guide` first. It returns the current storage boundary, safe import workflow, live-sync requirements, and target-index handoff pattern.
+
+When an agent opens this repository as a user workspace:
+
+- Detect the operating system first.
+- If it is Windows, run `nomadmail_install_windows_helper` or `.\scripts\nomad-inbox.ps1 install windows-helper` before connecting accounts.
+- If it is not Windows, do not install the Windows helper, start the tray, or offer Outlook Desktop COM sync. Use the MCP server for platform-independent local context tools and report what provider sync runtime is missing.
+- Do not discover credentials, mailbox profiles, exports, or connected accounts until the user approves the exact source and scope.
 
 Use this rule before parsing or syncing email for another repository:
 
@@ -95,7 +111,9 @@ npm run index
 - Default imports and syncs write to NomadInbox `data/` unless `NOMADINBOX_DATA_DIR` is set before the CLI/service starts.
 - Gmail API sync requires `NOMADINBOX_GMAIL_ACCESS_TOKEN` or a Gmail-scoped `gcloud` login.
 - Outlook Graph sync requires `NOMADINBOX_GRAPH_ACCESS_TOKEN` or an Azure CLI Microsoft Graph token.
-- Outlook Desktop sync requires the signed-in Windows Outlook profile.
+- Outlook Desktop sync requires Windows and the signed-in Windows Outlook profile.
+- The Windows helper tracks sync operations through `sync-status.json` and `actions.jsonl`, and tracks connected account config through ignored `config/accounts.json`.
+- Non-Windows agents should keep the MCP server available for `nomadmail_get_agent_guide`, `nomadmail_search_messages`, and `nomadmail_get_message`, and return a clear unsupported-runtime response for Windows-only helper, tray, and Outlook Desktop operations.
 - Archive import still requires an explicitly provided local path.
 - Full archive body import still requires `includeBodies=true`.
 - Send-style mailbox actions must stay behind the existing confirmation gate before they are added to this service.

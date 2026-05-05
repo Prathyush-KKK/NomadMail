@@ -11,6 +11,7 @@ NomadInbox processes are documented explicitly so provider behavior, safety rule
 | Provider discovery | `providers list` | Provider registry | Provider capability JSON | None | Service catalog, C4 container diagram |
 | Agent tool discovery | MCP `tools/list`, `node service/nomadmail-service.mjs tools` | NomadMail tool registry | MCP tool schemas | None | README, service catalog, OpenAPI |
 | Agent callable service | `nomadmail-mcp.ps1`, `nomadmail-http.ps1` | MCP/HTTP requests | Agent-readable JSON responses | Reads local stores and may call CLI | Agent service runbook, C4, OpenAPI |
+| Windows agent helper install | `install windows-helper`, `nomadmail_install_windows_helper` | OS check, optional data/install paths | Helper launcher and helper status JSON | `%LOCALAPPDATA%\NomadInbox\agent-helper`, ignored runtime data | README, runbooks, service catalog, OpenAPI |
 | Config inspection | `config status` | Local env/config | Redacted config status | None | Config template, runbooks |
 | Account sync configuration | `accounts init`, `accounts list` | `config/accounts.example.json`, local `config/accounts.json` | Redacted account status | Local ignored config | README, config template, runbooks |
 | Schema discovery | `schemas list` | Schema files | Schema location JSON | None | Schemas, OpenAPI/AsyncAPI |

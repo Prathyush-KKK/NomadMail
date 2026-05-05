@@ -23,6 +23,7 @@ Setup:
   .\scripts\nomad-inbox.ps1 setup
   .\scripts\nomad-inbox.ps1 doctor
   .\scripts\nomad-inbox.ps1 config status
+  .\scripts\nomad-inbox.ps1 install windows-helper
 
 Discovery:
   .\scripts\nomad-inbox.ps1 providers list
@@ -65,6 +66,18 @@ try {
     switch ($Command) {
         "setup" {
             Initialize-NomadInbox | ConvertTo-Json -Depth 20
+        }
+        "install" {
+            if ($Subcommand -ne "windows-helper") { throw "Unsupported install subcommand. Use: install windows-helper" }
+            $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+            $installer = Join-Path $repoRoot "scripts\install-windows-agent-helper.ps1"
+            $installerArgs = @()
+            $dataDir = Get-NomadInboxOption $options "data-dir" ""
+            if (-not [string]::IsNullOrWhiteSpace($dataDir)) { $installerArgs += @("-DataDir", $dataDir) }
+            $installRoot = Get-NomadInboxOption $options "install-root" ""
+            if (-not [string]::IsNullOrWhiteSpace($installRoot)) { $installerArgs += @("-InstallRoot", $installRoot) }
+            if ($options.ContainsKey("start-tray")) { $installerArgs += "-StartTray" }
+            & $installer @installerArgs
         }
         "doctor" {
             Test-NomadInbox | ConvertTo-Json -Depth 20

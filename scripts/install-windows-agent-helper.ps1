@@ -1,0 +1,103 @@
+param(
+    [string]$DataDir = "",
+    [string]$InstallRoot = "",
+    [switch]$StartTray
+)
+
+$ErrorActionPreference = "Stop"
+
+if (-not $IsWindows -and $PSVersionTable.PSEdition -eq "Core") {
+    [pscustomobject]@{
+        status = "unsupportedPlatform"
+        service = "NomadInbox"
+        platform = $PSVersionTable.Platform
+        message = "The Windows PowerShell helper installs only on Windows. Use the platform-independent NomadMail MCP server for local JSONL context, and use a supported provider runtime for live sync."
+    } | ConvertTo-Json -Depth 10
+    exit 2
+}
+
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$cli = Join-Path $repoRoot "scripts\nomad-inbox.ps1"
+
+if ([string]::IsNullOrWhiteSpace($DataDir)) {
+    $DataDir = Join-Path $repoRoot "data"
+}
+$resolvedDataDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DataDir)
+New-Item -ItemType Directory -Force -Path $resolvedDataDir | Out-Null
+
+$localAppData = if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+    Join-Path $env:USERPROFILE "AppData\Local"
+} else {
+    $env:LOCALAPPDATA
+}
+if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
+    $InstallRoot = Join-Path $localAppData "NomadInbox\agent-helper"
+}
+$resolvedInstallRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($InstallRoot)
+New-Item -ItemType Directory -Force -Path $resolvedInstallRoot | Out-Null
+
+$previousDataDir = $env:NOMADINBOX_DATA_DIR
+$env:NOMADINBOX_DATA_DIR = $resolvedDataDir
+try {
+    & $cli setup | Out-Null
+    & $cli accounts init | Out-Null
+} finally {
+    if ($null -eq $previousDataDir) {
+        Remove-Item Env:\NOMADINBOX_DATA_DIR -ErrorAction SilentlyContinue
+    } else {
+        $env:NOMADINBOX_DATA_DIR = $previousDataDir
+    }
+}
+
+$helperPath = Join-Path $resolvedInstallRoot "nomadmail.ps1"
+$statusPath = Join-Path $resolvedInstallRoot "status.json"
+$escapedCli = $cli.Replace("'", "''")
+$escapedDataDir = $resolvedDataDir.Replace("'", "''")
+$helperScript = @"
+param(
+    [Parameter(ValueFromRemainingArguments = `$true)]
+    [string[]]`$Argv
+)
+
+`$ErrorActionPreference = "Stop"
+`$env:NOMADINBOX_DATA_DIR = '$escapedDataDir'
+& '$escapedCli' @Argv
+"@
+$helperScript | Set-Content -LiteralPath $helperPath -Encoding UTF8
+
+$accountsConfigPath = Join-Path $repoRoot "config\accounts.json"
+$state = [pscustomobject]@{
+    status = "ok"
+    service = "NomadInbox"
+    installedAt = (Get-Date).ToUniversalTime().ToString("o")
+    platform = "windows"
+    repoRoot = $repoRoot
+    dataDir = $resolvedDataDir
+    helperPath = $helperPath
+    accountsConfigPath = $accountsConfigPath
+    syncStatusPath = Join-Path $resolvedDataDir "sync-status.json"
+    messagesPath = Join-Path $resolvedDataDir "messages.jsonl"
+    archiveMessagesPath = Join-Path $resolvedDataDir "archive-messages.jsonl"
+    notes = @(
+        "This helper tracks sync operations through sync-status.json and actions.jsonl in the configured data directory.",
+        "Connected accounts are tracked in config/accounts.json, which is ignored by git.",
+        "The helper does not connect accounts, read mailbox data, or start auto sync by itself."
+    )
+}
+$state | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $statusPath -Encoding UTF8
+
+if ($StartTray) {
+    Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $repoRoot "scripts\nomad-inbox-tray.ps1")) -WorkingDirectory $repoRoot | Out-Null
+}
+
+[pscustomobject]@{
+    status = "ok"
+    service = "NomadInbox"
+    installed = $true
+    platform = "windows"
+    helperPath = $helperPath
+    statusPath = $statusPath
+    dataDir = $resolvedDataDir
+    accountsConfigPath = $accountsConfigPath
+    trayStarted = [bool]$StartTray
+} | ConvertTo-Json -Depth 20

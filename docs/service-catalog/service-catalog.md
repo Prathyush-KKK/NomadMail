@@ -5,6 +5,7 @@
 | NomadInbox CLI | Local command surface | Bootstrapped | Local operator | High |
 | NomadMail MCP Server | Agent-native stdio service | Bootstrapped | Local operator | High |
 | NomadMail HTTP Service | Local REST-style service | Bootstrapped | Local operator | High |
+| Windows Agent Helper | Local PowerShell helper install | Bootstrapped | Local operator | Medium |
 | NomadInbox Core | Provider registry, safety, schemas | Bootstrapped | Local operator | High |
 | Background Sync Worker | Optional user-session polling | Bootstrapped | Local operator | Medium |
 | System Tray Controller | Local status/settings UI | Bootstrapped | Local operator | Medium |

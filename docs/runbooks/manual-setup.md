@@ -24,6 +24,25 @@ Expected result:
 - provider listing shows Gmail API, Outlook Graph, and Outlook Desktop
 - config status does not require mailbox access
 
+## Install The Windows Agent Helper
+
+On Windows, install the local PowerShell helper before connecting accounts:
+
+```powershell
+.\scripts\nomad-inbox.ps1 install windows-helper
+```
+
+Expected result:
+
+- ignored runtime files are initialized
+- `config\accounts.json` is created if missing
+- a local helper launcher is written under `%LOCALAPPDATA%\NomadInbox\agent-helper`
+- the helper status file records the data directory, account config path, sync status path, and message store paths
+
+The helper does not connect accounts, read mailbox data, or start auto sync by itself.
+
+On non-Windows systems, do not install this helper or offer Outlook Desktop sync. The NomadMail MCP server is Node-based and can still expose local JSONL context tools. Live provider sync currently needs PowerShell Core (`pwsh`) plus a supported provider runtime, or a future native adapter.
+
 ## Confirm Private Data Is Ignored
 
 Runtime data and local credentials are ignored by git. Check before connecting accounts:
