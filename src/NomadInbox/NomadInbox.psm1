@@ -26,6 +26,9 @@ function Get-NomadInboxDataDir {
 }
 
 function Get-NomadInboxMessagesPath { Join-Path (Get-NomadInboxDataDir) "messages.jsonl" }
+function Get-NomadInboxProviderRawPath { Join-Path (Get-NomadInboxDataDir) "provider-raw.jsonl" }
+function Get-NomadInboxMessageExtractsPath { Join-Path (Get-NomadInboxDataDir) "message-extracts.jsonl" }
+function Get-NomadInboxThreadIndexPath { Join-Path (Get-NomadInboxDataDir) "thread-index.jsonl" }
 function Get-NomadInboxActionsPath { Join-Path (Get-NomadInboxDataDir) "actions.jsonl" }
 function Get-NomadInboxStatusPath { Join-Path (Get-NomadInboxDataDir) "sync-status.json" }
 function Get-NomadInboxPidPath { Join-Path (Get-NomadInboxDataDir) "sync-worker.pid" }
@@ -39,7 +42,7 @@ function Get-NomadInboxImportStatusPath { Join-Path (Get-NomadInboxDataDir) "imp
 function Initialize-NomadInbox {
     $dataDir = Get-NomadInboxDataDir
     $attachmentsDir = New-NomadInboxDirectory (Join-Path $dataDir "attachments")
-    foreach ($file in @((Get-NomadInboxMessagesPath), (Get-NomadInboxActionsPath), (Get-NomadInboxArchiveMessagesPath), (Get-NomadInboxArchiveIndexPath))) {
+    foreach ($file in @((Get-NomadInboxMessagesPath), (Get-NomadInboxProviderRawPath), (Get-NomadInboxMessageExtractsPath), (Get-NomadInboxThreadIndexPath), (Get-NomadInboxActionsPath), (Get-NomadInboxArchiveMessagesPath), (Get-NomadInboxArchiveIndexPath))) {
         if (-not (Test-Path -LiteralPath $file)) {
             New-Item -ItemType File -Path $file | Out-Null
         }
@@ -50,6 +53,9 @@ function Initialize-NomadInbox {
         version = $script:Version
         dataDir = $dataDir
         messagesPath = Get-NomadInboxMessagesPath
+        providerRawPath = Get-NomadInboxProviderRawPath
+        messageExtractsPath = Get-NomadInboxMessageExtractsPath
+        threadIndexPath = Get-NomadInboxThreadIndexPath
         archiveMessagesPath = Get-NomadInboxArchiveMessagesPath
         archiveIndexPath = Get-NomadInboxArchiveIndexPath
         importStatusPath = Get-NomadInboxImportStatusPath
@@ -76,6 +82,26 @@ function ConvertTo-NomadInboxOptions {
         $i++
     }
     return $options
+}
+
+function Test-NomadInboxTruthy {
+    param($Value, [bool]$Default = $false)
+    if ($null -eq $Value) { return $Default }
+    if ($Value -is [bool]) { return [bool]$Value }
+    $text = ([string]$Value).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) { return $Default }
+    return $text -in @("1", "true", "yes", "y", "on", "enabled")
+}
+
+function Test-NomadInboxAccountOption {
+    param($Account, [string[]]$Names, [bool]$Default = $false)
+    if ($null -eq $Account) { return $Default }
+    foreach ($name in $Names) {
+        if ($Account.PSObject.Properties.Name -contains $name) {
+            return Test-NomadInboxTruthy $Account.$name $Default
+        }
+    }
+    return $Default
 }
 
 function Get-NomadInboxOption {
@@ -107,6 +133,25 @@ function ConvertTo-NomadInboxHash {
     } finally {
         $sha.Dispose()
     }
+}
+
+function Get-NomadInboxMessageId {
+    param([string]$Provider, [string]$AccountId, [string]$ProviderMessageId)
+    return "$Provider`:$AccountId`:" + (ConvertTo-NomadInboxHash $ProviderMessageId).Substring(0, 32)
+}
+
+function Get-NomadInboxProviderRawId {
+    param([string]$Provider, [string]$AccountId, [string]$ProviderMessageId)
+    return "raw:$Provider`:$AccountId`:" + (ConvertTo-NomadInboxHash $ProviderMessageId).Substring(0, 32)
+}
+
+function ConvertTo-NomadInboxSafeFileName {
+    param([string]$Name)
+    $fallback = if ([string]::IsNullOrWhiteSpace($Name)) { "attachment.bin" } else { $Name.Trim() }
+    $invalid = [regex]::Escape((-join [System.IO.Path]::GetInvalidFileNameChars()))
+    $safe = [regex]::Replace($fallback, "[$invalid]+", "_")
+    if ($safe.Length -gt 120) { $safe = $safe.Substring(0, 120) }
+    return $safe
 }
 
 function ConvertTo-NomadInboxSearchText {
@@ -349,6 +394,10 @@ function Get-NomadInboxAccounts {
             queryConfigured = -not [string]::IsNullOrWhiteSpace($_.query)
             limit = $_.limit
             intervalSeconds = if ($_.intervalSeconds) { $_.intervalSeconds } else { $config.defaultIntervalSeconds }
+            captureRawProviderData = Test-NomadInboxAccountOption -Account $_ -Names @("captureRawProviderData", "captureRaw", "storeRaw") -Default $true
+            includeBodies = Test-NomadInboxAccountOption -Account $_ -Names @("includeBodies", "storeBodies") -Default $false
+            includeAttachments = Test-NomadInboxAccountOption -Account $_ -Names @("includeAttachments", "captureAttachments") -Default $true
+            saveAttachments = Test-NomadInboxAccountOption -Account $_ -Names @("saveAttachments", "storeAttachmentBytes") -Default $false
         }
     })
     [pscustomobject]@{
@@ -470,6 +519,57 @@ function Write-NomadInboxActionRecord {
     return $record
 }
 
+function New-NomadInboxProviderRawRecord {
+    param(
+        [string]$Provider,
+        [string]$AccountId,
+        [string]$ProviderMessageId,
+        [string]$ConversationId,
+        $RawObject,
+        [bool]$BodyCaptured = $false,
+        [bool]$AttachmentMetadataCaptured = $false,
+        [bool]$AttachmentBytesCaptured = $false
+    )
+    $messageId = Get-NomadInboxMessageId -Provider $Provider -AccountId $AccountId -ProviderMessageId $ProviderMessageId
+    $rawId = Get-NomadInboxProviderRawId -Provider $Provider -AccountId $AccountId -ProviderMessageId $ProviderMessageId
+    [pscustomobject]@{
+        schemaVersion = 1
+        rawId = $rawId
+        messageId = $messageId
+        provider = $Provider
+        accountId = $AccountId
+        providerMessageId = $ProviderMessageId
+        conversationId = $ConversationId
+        capturedAt = Get-NomadInboxUtcNowIso
+        bodyCaptured = $BodyCaptured
+        attachmentMetadataCaptured = $AttachmentMetadataCaptured
+        attachmentBytesCaptured = $AttachmentBytesCaptured
+        raw = $RawObject
+    }
+}
+
+function Write-NomadInboxProviderRawRecords {
+    param([array]$Records)
+    Initialize-NomadInbox | Out-Null
+    $path = Get-NomadInboxProviderRawPath
+    $byId = [ordered]@{}
+    if (Test-Path -LiteralPath $path) {
+        foreach ($line in [System.IO.File]::ReadLines($path)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            try {
+                $existing = $line | ConvertFrom-Json
+                if ($existing.rawId) { $byId[[string]$existing.rawId] = $existing }
+            } catch {
+            }
+        }
+    }
+    foreach ($record in @($Records)) {
+        if ($record.rawId) { $byId[[string]$record.rawId] = $record }
+    }
+    $lines = @($byId.Values | ForEach-Object { $_ | ConvertTo-Json -Depth 100 -Compress })
+    $lines | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
 function New-NomadInboxSyncResult {
     param(
         $Account,
@@ -504,20 +604,28 @@ function New-NomadInboxLiveMessage {
         [string]$ReceivedAt,
         [string]$SentAt,
         [string]$Snippet,
+        [string]$BodyText,
+        [string]$BodyHtml,
         [hashtable]$Headers,
         [bool]$Unread,
         [bool]$Flagged,
         [string]$Importance,
         [array]$Categories,
         [array]$Attachments,
-        [array]$Capabilities
+        [array]$Capabilities,
+        [string]$ProviderRawRef,
+        [bool]$RawCaptured = $false
     )
-    $id = "$Provider`:$AccountId`:" + (ConvertTo-NomadInboxHash $ProviderMessageId).Substring(0, 32)
+    $id = Get-NomadInboxMessageId -Provider $Provider -AccountId $AccountId -ProviderMessageId $ProviderMessageId
+    $fallbackThreadKey = (ConvertTo-NomadInboxHash (($Subject + "|" + $Provider + "|" + $AccountId).ToLowerInvariant())).Substring(0, 32)
     [pscustomobject]@{
+        schemaVersion = 2
         id = $id
+        accountId = $AccountId
         provider = $Provider
         providerMessageId = $ProviderMessageId
         conversationId = $ConversationId
+        threadKey = if ([string]::IsNullOrWhiteSpace($ConversationId)) { $fallbackThreadKey } else { $ConversationId }
         folder = $Folder
         subject = if ([string]::IsNullOrWhiteSpace($Subject)) { "(no subject)" } else { $Subject }
         from = $From
@@ -526,19 +634,25 @@ function New-NomadInboxLiveMessage {
         receivedAt = if ([string]::IsNullOrWhiteSpace($ReceivedAt)) { Get-NomadInboxUtcNowIso } else { ConvertTo-NomadInboxIsoDate $ReceivedAt }
         sentAt = if ([string]::IsNullOrWhiteSpace($SentAt)) { $null } else { ConvertTo-NomadInboxIsoDate $SentAt }
         snippet = ConvertTo-NomadInboxSnippet $Snippet
-        bodyText = $null
-        bodyHtml = $null
+        bodyText = if ([string]::IsNullOrWhiteSpace($BodyText)) { $null } else { $BodyText }
+        bodyHtml = if ([string]::IsNullOrWhiteSpace($BodyHtml)) { $null } else { $BodyHtml }
+        bodyTextAvailable = -not [string]::IsNullOrWhiteSpace($BodyText)
+        bodyHtmlAvailable = -not [string]::IsNullOrWhiteSpace($BodyHtml)
         headers = if ($Headers) { $Headers } else { @{} }
         unread = $Unread
         flagged = $Flagged
         importance = $Importance
         categories = @($Categories)
-        attachments = @($Attachments)
+        attachments = @($Attachments | Where-Object { $null -ne $_ })
         capabilities = @($Capabilities)
         sourceType = "live-sync"
         sourceProvider = $Provider
         sourcePathHash = $null
         importBatchId = $null
+        providerRawRef = if ([string]::IsNullOrWhiteSpace($ProviderRawRef)) { $null } else { $ProviderRawRef }
+        rawCaptured = $RawCaptured
+        extractionStatus = "pending"
+        normalizedAt = Get-NomadInboxUtcNowIso
         actionable = $true
         importedAt = $null
     }
@@ -564,6 +678,85 @@ function Write-NomadInboxLiveMessages {
     }
     $lines = @($byId.Values | ForEach-Object { $_ | ConvertTo-Json -Depth 50 -Compress })
     $lines | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
+function Get-NomadInboxComValue {
+    param($Object, [string]$Name)
+    try {
+        if ($null -eq $Object) { return $null }
+        return $Object.$Name
+    } catch {
+        return $null
+    }
+}
+
+function Get-NomadInboxAttachmentOutputPath {
+    param([string]$Provider, [string]$ProviderMessageId, [int]$Index, [string]$FileName)
+    $dir = New-NomadInboxDirectory (Join-Path (Get-NomadInboxDataDir) "attachments")
+    $messageHash = (ConvertTo-NomadInboxHash $ProviderMessageId).Substring(0, 16)
+    $safeName = ConvertTo-NomadInboxSafeFileName $FileName
+    return Join-Path $dir "$Provider-$messageHash-$Index-$safeName"
+}
+
+function Get-NomadInboxOutlookAttachmentMetadata {
+    param($Item, [string]$ProviderMessageId, [bool]$SaveBytes = $false)
+    $result = @()
+    $attachments = Get-NomadInboxComValue $Item "Attachments"
+    $count = Get-NomadInboxComValue $attachments "Count"
+    if ($null -eq $count -or [int]$count -le 0) { return @() }
+    for ($i = 1; $i -le [int]$count; $i++) {
+        try {
+            $attachment = $attachments.Item($i)
+            $fileName = [string](Get-NomadInboxComValue $attachment "FileName")
+            if ([string]::IsNullOrWhiteSpace($fileName)) {
+                $fileName = [string](Get-NomadInboxComValue $attachment "DisplayName")
+            }
+            if ([string]::IsNullOrWhiteSpace($fileName)) { $fileName = "attachment-$i.bin" }
+            $localPath = $null
+            if ($SaveBytes) {
+                $localPath = Get-NomadInboxAttachmentOutputPath -Provider "outlook-desktop" -ProviderMessageId $ProviderMessageId -Index $i -FileName $fileName
+                $attachment.SaveAsFile($localPath)
+            }
+            $result += [pscustomobject]@{
+                id = [string]$i
+                name = $fileName
+                contentType = $null
+                sizeBytes = Get-NomadInboxComValue $attachment "Size"
+                localPath = $localPath
+                providerType = Get-NomadInboxComValue $attachment "Type"
+                displayName = Get-NomadInboxComValue $attachment "DisplayName"
+                position = Get-NomadInboxComValue $attachment "Position"
+            }
+        } catch {
+        }
+    }
+    return @($result)
+}
+
+function New-NomadInboxOutlookRawSnapshot {
+    param($Item, [array]$Attachments, [bool]$IncludeBodies = $false)
+    [pscustomobject]@{
+        entryId = Get-NomadInboxComValue $Item "EntryID"
+        conversationId = Get-NomadInboxComValue $Item "ConversationID"
+        conversationTopic = Get-NomadInboxComValue $Item "ConversationTopic"
+        messageClass = Get-NomadInboxComValue $Item "MessageClass"
+        subject = Get-NomadInboxComValue $Item "Subject"
+        senderName = Get-NomadInboxComValue $Item "SenderName"
+        senderEmailAddress = Get-NomadInboxComValue $Item "SenderEmailAddress"
+        to = Get-NomadInboxComValue $Item "To"
+        cc = Get-NomadInboxComValue $Item "CC"
+        bcc = Get-NomadInboxComValue $Item "BCC"
+        receivedTime = [string](Get-NomadInboxComValue $Item "ReceivedTime")
+        sentOn = [string](Get-NomadInboxComValue $Item "SentOn")
+        importance = Get-NomadInboxComValue $Item "Importance"
+        unread = Get-NomadInboxComValue $Item "UnRead"
+        isMarkedAsTask = Get-NomadInboxComValue $Item "IsMarkedAsTask"
+        categories = Get-NomadInboxComValue $Item "Categories"
+        size = Get-NomadInboxComValue $Item "Size"
+        attachments = @($Attachments | Where-Object { $null -ne $_ })
+        body = if ($IncludeBodies) { Get-NomadInboxComValue $Item "Body" } else { $null }
+        htmlBody = if ($IncludeBodies) { Get-NomadInboxComValue $Item "HTMLBody" } else { $null }
+    }
 }
 
 function Get-NomadInboxExternalCommandOutput {
@@ -611,7 +804,7 @@ function Get-NomadInboxGmailHeader {
 }
 
 function ConvertFrom-NomadInboxGmailMessage {
-    param($Message, $Account)
+    param($Message, $Account, [string]$BodyText = $null, [string]$BodyHtml = $null, [array]$Attachments = @(), [string]$ProviderRawRef = "", [bool]$RawCaptured = $false)
     $headers = @{}
     foreach ($header in @($Message.payload.headers)) {
         if ($header.name) { $headers[[string]$header.name] = [string]$header.value }
@@ -637,13 +830,17 @@ function ConvertFrom-NomadInboxGmailMessage {
         -ReceivedAt $receivedAt `
         -SentAt (ConvertTo-NomadInboxIsoDate (Get-NomadInboxGmailHeader $Message "Date")) `
         -Snippet ([string]$Message.snippet) `
+        -BodyText $BodyText `
+        -BodyHtml $BodyHtml `
         -Headers $headers `
         -Unread ($labelIds -contains "UNREAD") `
         -Flagged ($labelIds -contains "STARRED") `
         -Importance $null `
         -Categories $labelIds `
-        -Attachments @() `
-        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "star", "archive", "trash")
+        -Attachments @($Attachments) `
+        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "star", "archive", "trash", "saveAttachment") `
+        -ProviderRawRef $ProviderRawRef `
+        -RawCaptured $RawCaptured
 }
 
 function Invoke-NomadInboxGmailApiSync {
@@ -653,6 +850,9 @@ function Invoke-NomadInboxGmailApiSync {
         return New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAuth" -Reason "Set NOMADINBOX_GMAIL_ACCESS_TOKEN or sign in with gcloud using Gmail scopes." -Synced 0 -StartedAt $StartedAt
     }
     $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
+    $captureRaw = Test-NomadInboxAccountOption -Account $Account -Names @("captureRawProviderData", "captureRaw", "storeRaw") -Default $true
+    $includeBodies = Test-NomadInboxAccountOption -Account $Account -Names @("includeBodies", "storeBodies") -Default $false
+    $includeAttachments = Test-NomadInboxAccountOption -Account $Account -Names @("includeAttachments", "captureAttachments") -Default $true
     $folder = if ([string]::IsNullOrWhiteSpace($Account.folder)) { "Inbox" } else { [string]$Account.folder }
     $headers = @{ Authorization = "Bearer $token" }
     $queryParams = @{
@@ -665,12 +865,47 @@ function Invoke-NomadInboxGmailApiSync {
     try {
         $list = Invoke-RestMethod -Method Get -Uri $listUri -Headers $headers
         $records = @()
+        $rawRecords = @()
         foreach ($messageRef in @($list.messages | Where-Object { $null -ne $_ -and $_.id })) {
-            $messageUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages/$([uri]::EscapeDataString([string]$messageRef.id))?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID"
+            $formatQuery = if ($includeBodies -or $includeAttachments) {
+                "format=full"
+            } else {
+                "format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID"
+            }
+            $messageUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages/$([uri]::EscapeDataString([string]$messageRef.id))?$formatQuery"
             $message = Invoke-RestMethod -Method Get -Uri $messageUri -Headers $headers
-            $records += ConvertFrom-NomadInboxGmailMessage -Message $message -Account $Account
+            $attachments = @()
+            if ($includeAttachments -and $message.payload) {
+                $parts = @($message.payload.parts | Where-Object { $null -ne $_ })
+                foreach ($part in $parts) {
+                    if (-not [string]::IsNullOrWhiteSpace($part.filename)) {
+                        $attachments += [pscustomobject]@{
+                            id = if ($part.body.attachmentId) { [string]$part.body.attachmentId } else { [string]$part.partId }
+                            name = [string]$part.filename
+                            contentType = [string]$part.mimeType
+                            sizeBytes = if ($part.body.size) { [int64]$part.body.size } else { $null }
+                            localPath = $null
+                        }
+                    }
+                }
+            }
+            $rawRef = $null
+            if ($captureRaw) {
+                $rawRef = Get-NomadInboxProviderRawId -Provider "gmail-api" -AccountId $Account.id -ProviderMessageId ([string]$message.id)
+                $rawRecords += New-NomadInboxProviderRawRecord `
+                    -Provider "gmail-api" `
+                    -AccountId $Account.id `
+                    -ProviderMessageId ([string]$message.id) `
+                    -ConversationId ([string]$message.threadId) `
+                    -RawObject $message `
+                    -BodyCaptured:$includeBodies `
+                    -AttachmentMetadataCaptured:$includeAttachments `
+                    -AttachmentBytesCaptured:$false
+            }
+            $records += ConvertFrom-NomadInboxGmailMessage -Message $message -Account $Account -Attachments $attachments -ProviderRawRef $rawRef -RawCaptured:$captureRaw
         }
         Write-NomadInboxLiveMessages -Records $records
+        if ($rawRecords.Count -gt 0) { Write-NomadInboxProviderRawRecords -Records $rawRecords }
         Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = $records.Count } -ErrorMessage $null | Out-Null
         return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced $records.Count -StartedAt $StartedAt
     } catch {
@@ -688,9 +923,18 @@ function ConvertTo-NomadInboxGraphAddress {
 }
 
 function ConvertFrom-NomadInboxGraphMessage {
-    param($Message, $Account)
+    param($Message, $Account, [array]$Attachments = @(), [string]$ProviderRawRef = "", [bool]$RawCaptured = $false, [bool]$IncludeBodies = $false)
     $flagged = $false
     if ($Message.flag -and $Message.flag.flagStatus) { $flagged = ([string]$Message.flag.flagStatus) -ne "notFlagged" }
+    $bodyText = $null
+    $bodyHtml = $null
+    if ($IncludeBodies -and $Message.body -and $Message.body.content) {
+        if ([string]$Message.body.contentType -ieq "html") {
+            $bodyHtml = [string]$Message.body.content
+        } else {
+            $bodyText = [string]$Message.body.content
+        }
+    }
     New-NomadInboxLiveMessage `
         -Provider "outlook-graph" `
         -AccountId $Account.id `
@@ -704,13 +948,17 @@ function ConvertFrom-NomadInboxGraphMessage {
         -ReceivedAt (ConvertTo-NomadInboxIsoDate ([string]$Message.receivedDateTime)) `
         -SentAt (ConvertTo-NomadInboxIsoDate ([string]$Message.sentDateTime)) `
         -Snippet ([string]$Message.bodyPreview) `
+        -BodyText $bodyText `
+        -BodyHtml $bodyHtml `
         -Headers @{} `
         -Unread (-not [bool]$Message.isRead) `
         -Flagged $flagged `
         -Importance ([string]$Message.importance) `
         -Categories @($Message.categories) `
-        -Attachments @() `
-        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash")
+        -Attachments @($Attachments) `
+        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment") `
+        -ProviderRawRef $ProviderRawRef `
+        -RawCaptured $RawCaptured
 }
 
 function Invoke-NomadInboxOutlookGraphSync {
@@ -720,16 +968,66 @@ function Invoke-NomadInboxOutlookGraphSync {
         return New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAuth" -Reason "Set NOMADINBOX_GRAPH_ACCESS_TOKEN or sign in with Azure CLI for Microsoft Graph." -Synced 0 -StartedAt $StartedAt
     }
     $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
+    $captureRaw = Test-NomadInboxAccountOption -Account $Account -Names @("captureRawProviderData", "captureRaw", "storeRaw") -Default $true
+    $includeBodies = Test-NomadInboxAccountOption -Account $Account -Names @("includeBodies", "storeBodies") -Default $false
+    $includeAttachments = Test-NomadInboxAccountOption -Account $Account -Names @("includeAttachments", "captureAttachments") -Default $true
+    $saveAttachments = Test-NomadInboxAccountOption -Account $Account -Names @("saveAttachments", "storeAttachmentBytes") -Default $false
     $folder = if ([string]::IsNullOrWhiteSpace($Account.folder)) { "Inbox" } else { [string]$Account.folder }
     $headers = @{ Authorization = "Bearer $token" }
     $top = [Math]::Max(1, [Math]::Min(100, $limit))
-    $select = "id,conversationId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,flag,importance,categories"
+    $select = "id,conversationId,conversationIndex,subject,from,toRecipients,ccRecipients,bccRecipients,replyTo,receivedDateTime,sentDateTime,bodyPreview,isRead,flag,importance,categories,hasAttachments,internetMessageId,webLink,parentFolderId"
+    if ($includeBodies) { $select += ",body" }
     $base = if ($folder -ieq "Inbox") { "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages" } else { "https://graph.microsoft.com/v1.0/me/messages" }
     $uri = "$base?`$top=$top&`$orderby=receivedDateTime desc&`$select=$select"
     try {
         $response = Invoke-RestMethod -Method Get -Uri $uri -Headers $headers
-        $records = @($response.value | Where-Object { $null -ne $_ -and $_.id } | ForEach-Object { ConvertFrom-NomadInboxGraphMessage -Message $_ -Account $Account })
+        $records = @()
+        $rawRecords = @()
+        foreach ($message in @($response.value | Where-Object { $null -ne $_ -and $_.id })) {
+            $attachments = @()
+            if ($includeAttachments -and $message.hasAttachments) {
+                try {
+                    $attachmentUri = "https://graph.microsoft.com/v1.0/me/messages/$([uri]::EscapeDataString([string]$message.id))/attachments"
+                    $attachmentResponse = Invoke-RestMethod -Method Get -Uri $attachmentUri -Headers $headers
+                    $attachmentIndex = 0
+                    foreach ($attachment in @($attachmentResponse.value)) {
+                        $attachmentIndex++
+                        $localPath = $null
+                        if ($saveAttachments -and $attachment.contentBytes) {
+                            $fileName = if ($attachment.name) { [string]$attachment.name } else { "attachment-$attachmentIndex.bin" }
+                            $localPath = Get-NomadInboxAttachmentOutputPath -Provider "outlook-graph" -ProviderMessageId ([string]$message.id) -Index $attachmentIndex -FileName $fileName
+                            [System.IO.File]::WriteAllBytes($localPath, [System.Convert]::FromBase64String([string]$attachment.contentBytes))
+                        }
+                        $attachments += [pscustomobject]@{
+                            id = [string]$attachment.id
+                            name = [string]$attachment.name
+                            contentType = [string]$attachment.contentType
+                            sizeBytes = if ($attachment.size) { [int64]$attachment.size } else { $null }
+                            localPath = $localPath
+                            isInline = if ($null -ne $attachment.isInline) { [bool]$attachment.isInline } else { $false }
+                        }
+                    }
+                    $message | Add-Member -NotePropertyName attachments -NotePropertyValue @($attachmentResponse.value) -Force
+                } catch {
+                }
+            }
+            $rawRef = $null
+            if ($captureRaw) {
+                $rawRef = Get-NomadInboxProviderRawId -Provider "outlook-graph" -AccountId $Account.id -ProviderMessageId ([string]$message.id)
+                $rawRecords += New-NomadInboxProviderRawRecord `
+                    -Provider "outlook-graph" `
+                    -AccountId $Account.id `
+                    -ProviderMessageId ([string]$message.id) `
+                    -ConversationId ([string]$message.conversationId) `
+                    -RawObject $message `
+                    -BodyCaptured:$includeBodies `
+                    -AttachmentMetadataCaptured:$includeAttachments `
+                    -AttachmentBytesCaptured:$saveAttachments
+            }
+            $records += ConvertFrom-NomadInboxGraphMessage -Message $message -Account $Account -Attachments $attachments -ProviderRawRef $rawRef -RawCaptured:$captureRaw -IncludeBodies:$includeBodies
+        }
         Write-NomadInboxLiveMessages -Records $records
+        if ($rawRecords.Count -gt 0) { Write-NomadInboxProviderRawRecords -Records $rawRecords }
         Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = $records.Count } -ErrorMessage $null | Out-Null
         return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced $records.Count -StartedAt $StartedAt
     } catch {
@@ -739,13 +1037,14 @@ function Invoke-NomadInboxOutlookGraphSync {
 }
 
 function ConvertFrom-NomadInboxOutlookDesktopItem {
-    param($Item, $Account)
+    param($Item, $Account, [array]$Attachments = @(), [string]$ProviderRawRef = "", [bool]$RawCaptured = $false, [bool]$IncludeBodies = $false)
     $receivedAt = if ($Item.ReceivedTime) { ConvertTo-NomadInboxUtcIsoFromDateTime ([datetime]$Item.ReceivedTime) } else { Get-NomadInboxUtcNowIso }
     $sentAt = if ($Item.SentOn) { ConvertTo-NomadInboxUtcIsoFromDateTime ([datetime]$Item.SentOn) } else { $null }
     $entryId = if ($Item.EntryID) { [string]$Item.EntryID } else { ConvertTo-NomadInboxHash ([string]$Item.Subject + [string]$receivedAt) }
     $senderEmail = if ($Item.SenderEmailAddress) { [string]$Item.SenderEmailAddress } else { "unknown@example.invalid" }
     $senderName = if ($Item.SenderName) { [string]$Item.SenderName } else { $null }
     $body = if ($Item.Body) { [string]$Item.Body } else { "" }
+    $htmlBody = if ($IncludeBodies -and $Item.HTMLBody) { [string]$Item.HTMLBody } else { $null }
     New-NomadInboxLiveMessage `
         -Provider "outlook-desktop" `
         -AccountId $Account.id `
@@ -759,13 +1058,17 @@ function ConvertFrom-NomadInboxOutlookDesktopItem {
         -ReceivedAt $receivedAt `
         -SentAt $sentAt `
         -Snippet $body `
+        -BodyText $(if ($IncludeBodies) { $body } else { $null }) `
+        -BodyHtml $htmlBody `
         -Headers @{} `
         -Unread ([bool]$Item.UnRead) `
         -Flagged ([bool]$Item.IsMarkedAsTask) `
         -Importance ([string]$Item.Importance) `
         -Categories (@(([string]$Item.Categories) -split ',' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object { $_.Trim() })) `
-        -Attachments @() `
-        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash")
+        -Attachments @($Attachments) `
+        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment") `
+        -ProviderRawRef $ProviderRawRef `
+        -RawCaptured $RawCaptured
 }
 
 function Invoke-NomadInboxOutlookDesktopSync {
@@ -774,6 +1077,10 @@ function Invoke-NomadInboxOutlookDesktopSync {
         return New-NomadInboxSyncResult -Account $Account -Status "unsupportedRuntime" -Reason "Outlook Desktop sync requires Windows PowerShell in a signed-in desktop session." -Synced 0 -StartedAt $StartedAt
     }
     $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
+    $captureRaw = Test-NomadInboxAccountOption -Account $Account -Names @("captureRawProviderData", "captureRaw", "storeRaw") -Default $true
+    $includeBodies = Test-NomadInboxAccountOption -Account $Account -Names @("includeBodies", "storeBodies") -Default $false
+    $includeAttachments = Test-NomadInboxAccountOption -Account $Account -Names @("includeAttachments", "captureAttachments") -Default $true
+    $saveAttachments = Test-NomadInboxAccountOption -Account $Account -Names @("saveAttachments", "storeAttachmentBytes") -Default $false
     try {
         $outlook = New-Object -ComObject Outlook.Application
         $namespace = $outlook.GetNamespace("MAPI")
@@ -781,17 +1088,34 @@ function Invoke-NomadInboxOutlookDesktopSync {
         $items = $folder.Items
         $items.Sort("[ReceivedTime]", $true)
         $records = @()
+        $rawRecords = @()
         $count = [Math]::Min($items.Count, [Math]::Max(1, $limit))
         for ($i = 1; $i -le $count; $i++) {
             try {
                 $item = $items.Item($i)
                 if ($null -eq $item) { continue }
                 if ($item.MessageClass -and -not ([string]$item.MessageClass).StartsWith("IPM.Note")) { continue }
-                $records += ConvertFrom-NomadInboxOutlookDesktopItem -Item $item -Account $Account
+                $entryId = if ($item.EntryID) { [string]$item.EntryID } else { ConvertTo-NomadInboxHash ([string]$item.Subject + [string]$item.ReceivedTime) }
+                $attachments = if ($includeAttachments) { Get-NomadInboxOutlookAttachmentMetadata -Item $item -ProviderMessageId $entryId -SaveBytes:$saveAttachments } else { @() }
+                $rawRef = $null
+                if ($captureRaw) {
+                    $rawRef = Get-NomadInboxProviderRawId -Provider "outlook-desktop" -AccountId $Account.id -ProviderMessageId $entryId
+                    $rawRecords += New-NomadInboxProviderRawRecord `
+                        -Provider "outlook-desktop" `
+                        -AccountId $Account.id `
+                        -ProviderMessageId $entryId `
+                        -ConversationId ([string]$item.ConversationID) `
+                        -RawObject (New-NomadInboxOutlookRawSnapshot -Item $item -Attachments $attachments -IncludeBodies:$includeBodies) `
+                        -BodyCaptured:$includeBodies `
+                        -AttachmentMetadataCaptured:$includeAttachments `
+                        -AttachmentBytesCaptured:$saveAttachments
+                }
+                $records += ConvertFrom-NomadInboxOutlookDesktopItem -Item $item -Account $Account -Attachments $attachments -ProviderRawRef $rawRef -RawCaptured:$captureRaw -IncludeBodies:$includeBodies
             } catch {
             }
         }
         Write-NomadInboxLiveMessages -Records $records
+        if ($rawRecords.Count -gt 0) { Write-NomadInboxProviderRawRecords -Records $rawRecords }
         Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = $records.Count } -ErrorMessage $null | Out-Null
         return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced $records.Count -StartedAt $StartedAt
     } catch {
@@ -987,6 +1311,9 @@ function Write-NomadInboxImportStatus {
 function Get-NomadInboxBackupStatus {
     Initialize-NomadInbox | Out-Null
     $liveCount = Get-NomadInboxJsonlCount (Get-NomadInboxMessagesPath)
+    $rawCount = Get-NomadInboxJsonlCount (Get-NomadInboxProviderRawPath)
+    $extractCount = Get-NomadInboxJsonlCount (Get-NomadInboxMessageExtractsPath)
+    $threadIndexCount = Get-NomadInboxJsonlCount (Get-NomadInboxThreadIndexPath)
     $archiveCount = Get-NomadInboxJsonlCount (Get-NomadInboxArchiveMessagesPath)
     $indexCount = Get-NomadInboxJsonlCount (Get-NomadInboxArchiveIndexPath)
     $syncStatus = Read-NomadInboxSyncStatus
@@ -1014,10 +1341,16 @@ function Get-NomadInboxBackupStatus {
         status = "ok"
         service = $script:ServiceName
         liveSyncedMessages = $liveCount
+        providerRawSnapshots = $rawCount
+        messageExtracts = $extractCount
+        threadIndexRecords = $threadIndexCount
         archiveImportedMessages = $archiveCount
         archiveIndexedMessages = $indexCount
         totalBackedUpMessages = $liveCount + $archiveCount
         messagesPath = Get-NomadInboxMessagesPath
+        providerRawPath = Get-NomadInboxProviderRawPath
+        messageExtractsPath = Get-NomadInboxMessageExtractsPath
+        threadIndexPath = Get-NomadInboxThreadIndexPath
         archiveMessagesPath = Get-NomadInboxArchiveMessagesPath
         archiveIndexPath = Get-NomadInboxArchiveIndexPath
         syncStatus = $syncStatus
@@ -1314,6 +1647,7 @@ function Test-NomadInbox {
     $required = @(
         "README.md",
         "schemas\message.v1.json",
+        "schemas\provider-raw.v1.json",
         "schemas\action.v1.json",
         "config\nomad-inbox.example.ps1",
         "config\accounts.example.json",
@@ -1343,6 +1677,7 @@ function Get-NomadInboxSchemas {
         status = "ok"
         schemas = @(
             [pscustomobject]@{ name = "message.v1"; path = Join-Path $root "schemas\message.v1.json" },
+            [pscustomobject]@{ name = "provider-raw.v1"; path = Join-Path $root "schemas\provider-raw.v1.json" },
             [pscustomobject]@{ name = "action.v1"; path = Join-Path $root "schemas\action.v1.json" }
         )
     }

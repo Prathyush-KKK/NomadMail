@@ -4,7 +4,7 @@ Goal:
 Make approved Gmail, Outlook, Outlook Desktop, and local email export context available to agents through the local NomadMail service while keeping mailbox data, credentials, sync logs, and indexes local and out of GitHub.
 
 On startup:
-1. Read `docs/governance/WORKSPACE_STATE.md` before answering, then detect the operating system and workspace path.
+1. Read `docs/governance/WORKSPACE_STATE.md` and `docs/runbooks/agent-user-flow.md` before answering, then detect the operating system and workspace path.
 2. Verify repository setup, NomadMail service health, provider availability, account config, and git ignore boundaries.
 3. If this is Windows, install the NomadInbox PowerShell helper so sync operations, connected account config, status files, and local message stores can be tracked. Then report Windows tray availability and ask whether to start the compiled tray client for the compact status popup, the always-on local HTTP agent service, and the future auto-sync toggle. Do not turn on auto sync yet.
 4. If this is not Windows, do not install the Windows helper, start the tray, or offer Outlook Desktop sync. Explain that the NomadMail MCP server is platform-independent for agent tool access, and that live provider sync needs PowerShell Core plus a supported provider runtime or a future native adapter.
@@ -42,6 +42,8 @@ Agent script policy:
 - Prefer built-in NomadMail tools, the Node service commands, and the existing PowerShell CLI.
 - For complex PowerShell diagnostics, create a temporary script instead of fragile inline `-Command` quoting.
 - Temporary diagnostic scripts must live under an ignored scratch location such as `runtime/agent-scratch/` or the OS temp directory. Do not create ad hoc scripts in `scripts/`, `src/`, `service/`, `docs/`, or the repository root.
+- When generating markdown, HTML, or JSON reports for broad email ranges, include the source and date range in the folder or filename. Use sortable names such as `unread-outlook-2026-04-29-to-2026-05-06.md`, `unread-outlook-week-of-2026-05-06-index.md`, or `gmail-takeout-2025.md`; do not use vague names like `unread-outlook-week.md` for large ranges.
+- Use `messages.jsonl` as the canonical normalized message store and `provider-raw.jsonl` as the provider-specific evidence store. Normalize records before search, summaries, action menus, or digest views.
 - Keep tracked repository code for durable sync, service, tray, provider, schema, and documented product behavior only.
 - Delete temporary diagnostic scripts when they are no longer needed unless the user asks to keep the scratch evidence.
 - Build publish/test installers with `.\scripts\build-windows-installer.ps1`. The package flow copies tracked product files plus the required `VERSION` file and excludes runtime data, local account config, Kiro scratch files, tokens, and mail exports.

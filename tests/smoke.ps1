@@ -46,7 +46,7 @@ try {
     if ($status.status -ne "ok") { throw "service status failed" }
 
     $backup = & $cli backup status | ConvertFrom-Json
-    if ($backup.status -ne "ok") { throw "backup status failed" }
+    if ($backup.status -ne "ok" -or -not $backup.providerRawPath -or $null -eq $backup.providerRawSnapshots) { throw "backup status failed" }
 
     $importStatus = & $cli import status | ConvertFrom-Json
     if ($null -eq $importStatus.service) { throw "import status failed" }
@@ -120,7 +120,7 @@ This sample validates archive ingestion without using real mailbox exports.
     }
 
     $agentService = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") self-test | ConvertFrom-Json
-    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or -not $agentService.latestMessageStatus -or $agentService.messageActionsStatus -ne "ok") {
+    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or $agentService.agentUserFlowStatus -ne "ok" -or -not $agentService.latestMessageStatus -or $agentService.messageActionsStatus -ne "ok") {
         throw "agent service self-test failed"
     }
 
@@ -131,15 +131,23 @@ This sample validates archive ingestion without using real mailbox exports.
     if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_message_actions" }).Count -ne 1) {
         throw "message actions tool missing"
     }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_agent_user_flow" }).Count -ne 1) {
+        throw "agent user flow tool missing"
+    }
 
     $agentGuide = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-guide | ConvertFrom-Json
-    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*") -or -not $agentGuide.mailActionGuidance -or $agentGuide.mailActionGuidance.permissionModel.deleteApproval -notlike "*two explicit confirmations*") {
+    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.storageBoundary.rawProviderStore -or $agentGuide.storageBoundary.normalizationRule -notlike "*provider-raw.jsonl*" -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.agentUserFlow.text -or $agentGuide.agentUserFlow.text -notlike "*Daily Mail Query Menu*" -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*") -or -not $agentGuide.generatedReportNaming -or $agentGuide.generatedReportNaming.rule -notlike "*date or time range*" -or -not $agentGuide.mailActionGuidance -or $agentGuide.mailActionGuidance.permissionModel.deleteApproval -notlike "*two explicit confirmations*") {
         throw "agent guide failed"
     }
 
     $systemPrompt = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") system-prompt | ConvertFrom-Json
-    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*Your first response must show*" -or $systemPrompt.text -notlike "*Windows helper and tray status*" -or $systemPrompt.text -notlike "*runtime/agent-scratch*" -or $systemPrompt.text -notlike "*MCP stdio tools are launched by each calling agent*" -or $systemPrompt.text -notlike "*Do not dump endpoint lists*" -or $systemPrompt.text -notlike "*user's locale and time zone*" -or $systemPrompt.text -notlike "*latest email*" -or $systemPrompt.text -notlike "*Trash/delete requires double explicit approval*") {
+    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*docs/runbooks/agent-user-flow.md*" -or $systemPrompt.text -notlike "*Your first response must show*" -or $systemPrompt.text -notlike "*Windows helper and tray status*" -or $systemPrompt.text -notlike "*runtime/agent-scratch*" -or $systemPrompt.text -notlike "*MCP stdio tools are launched by each calling agent*" -or $systemPrompt.text -notlike "*Do not dump endpoint lists*" -or $systemPrompt.text -notlike "*user's locale and time zone*" -or $systemPrompt.text -notlike "*latest email*" -or $systemPrompt.text -notlike "*Trash/delete requires double explicit approval*" -or $systemPrompt.text -notlike "*unread-outlook-2026-04-29-to-2026-05-06.md*") {
         throw "startup system prompt failed"
+    }
+
+    $agentUserFlow = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-user-flow | ConvertFrom-Json
+    if ($agentUserFlow.status -ne "ok" -or $agentUserFlow.text -notlike "*Flow 1: First Prompt*" -or $agentUserFlow.text -notlike "*Flow 5: Daily Mail Query Menu*") {
+        throw "agent user flow failed"
     }
 
     $workspaceState = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") workspace-state | ConvertFrom-Json
@@ -155,7 +163,7 @@ This sample validates archive ingestion without using real mailbox exports.
 
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "install windows helper", "tray status", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "message actions tool", "agent guide", "startup system prompt", "workspace state", "versioned installer package")
+        tests = @("doctor", "providers list", "accounts list", "install windows helper", "tray status", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "message actions tool", "agent user flow tool", "agent guide", "startup system prompt", "agent user flow", "workspace state", "versioned installer package")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {

@@ -81,6 +81,9 @@ agent guidance should present local user time.
 Runtime data is local and ignored by git:
 
 - `data/messages.jsonl`
+- `data/provider-raw.jsonl`
+- `data/message-extracts.jsonl`
+- `data/thread-index.jsonl`
 - `data/archive-messages.jsonl`
 - `data/archive-index.jsonl`
 - `data/import-status.json`
@@ -116,6 +119,9 @@ Recommended backup shape:
   an encrypted external drive.
 - Include durable runtime files:
   - `data/messages.jsonl`
+  - `data/provider-raw.jsonl`
+  - `data/message-extracts.jsonl`
+  - `data/thread-index.jsonl`
   - `data/archive-messages.jsonl`
   - `data/import-status.json`
   - `data/sync-status.json`
@@ -147,6 +153,9 @@ Future CLI support should implement this as request-driven commands, for
 example `backup export` and `backup restore --target-data-dir`, with a dry-run
 restore preview and no credential backup unless the user provides an encrypted
 secret-backup option.
+
+The user-facing procedure is documented in
+[Runtime Backup And Restore](runbooks/runtime-backup-restore.md).
 
 ## Release Packaging
 
@@ -228,8 +237,19 @@ Bootstrap provider sync is implemented for:
 - Outlook Desktop using Windows Outlook COM in the signed-in desktop session.
 
 These bootstrap adapters store normalized metadata and snippets in
-`data/messages.jsonl`. Draft, send, attachment hydration, and state mutation
-remain governed by the safety / approval gate before service exposure.
+`data/messages.jsonl`, and provider-specific snapshots in
+`data/provider-raw.jsonl`. The canonical message store is the stable agent/UI
+contract. The raw provider store preserves extractable Gmail, Outlook Graph, or
+Outlook Desktop details without forcing every UI surface to understand
+provider-specific fields. Account settings decide whether raw provider data,
+body text/html, attachment metadata, and attachment bytes are captured; attachment
+bytes stay off by default.
+
+Read paths normalize records before search, summaries, action guidance, or digest
+views. This protects older JSONL rows, archive imports, and future schema changes
+from leaking provider-specific shape differences into the agent or tray UI.
+Draft, send, attachment hydration, and state mutation remain governed by the
+safety / approval gate before service exposure.
 The MCP/HTTP service can expose action guidance for discovered messages, but
 that guidance is not itself permission to mutate a mailbox.
 

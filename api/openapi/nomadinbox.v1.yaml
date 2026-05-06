@@ -42,6 +42,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WorkspaceState"
+  /agent-user-flow:
+    get:
+      operationId: nomadmailGetAgentUserFlow
+      summary: Return the definitive user-facing agent flow
+      description: Agents should use this flow when explaining first-run setup, sync/import approvals, service/tray setup, daily mail query choices, and mail action follow-up.
+      responses:
+        "200":
+          description: Agent user flow
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentUserFlow"
   /health:
     get:
       operationId: nomadmailHealthCheck
@@ -342,6 +354,8 @@ components:
           $ref: "#/components/schemas/SystemPrompt"
         workspaceState:
           $ref: "#/components/schemas/WorkspaceState"
+        agentUserFlow:
+          $ref: "#/components/schemas/AgentUserFlow"
         storageBoundary:
           type: object
           properties:
@@ -390,6 +404,19 @@ components:
         text:
           type: string
     WorkspaceState:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        text:
+          type: string
+    AgentUserFlow:
       type: object
       properties:
         status:

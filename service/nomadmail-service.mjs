@@ -13,6 +13,7 @@ const cliPath = join(repoRoot, "scripts", "nomad-inbox.ps1");
 const installerPath = join(repoRoot, "scripts", "install-windows-agent-helper.ps1");
 const startupSystemPromptPath = join(repoRoot, "prompts", "nomadmail-startup.system.md");
 const workspaceStatePath = join(repoRoot, "docs", "governance", "WORKSPACE_STATE.md");
+const agentUserFlowPath = join(repoRoot, "docs", "runbooks", "agent-user-flow.md");
 const versionPath = join(repoRoot, "VERSION");
 const serviceVersion = readVersion();
 
@@ -66,6 +67,15 @@ const tools = [
   {
     name: "nomadmail_get_workspace_state",
     description: "Return the living NomadInbox workspace state file so agents can resume from durable session state before refreshing live status.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_get_agent_user_flow",
+    description: "Return the definitive user-facing flow from first workspace prompt through daily mail query choices.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -340,6 +350,16 @@ function workspaceState() {
   };
 }
 
+function agentUserFlow() {
+  return {
+    status: "ok",
+    service: "NomadMail",
+    name: "nomadmail-agent-user-flow",
+    path: agentUserFlowPath,
+    text: readFileSync(agentUserFlowPath, "utf8").replace(/\r\n/g, "\n").trim(),
+  };
+}
+
 function agentGuide() {
   return {
     status: "ok",
@@ -349,9 +369,11 @@ function agentGuide() {
     timeHandling: timeContext(),
     startupSystemPrompt: startupSystemPrompt(),
     workspaceState: workspaceState(),
+    agentUserFlow: agentUserFlow(),
     startupGuidance: [
       "When opened in a user workspace, load startupSystemPrompt.text as the system-level instruction for NomadInbox/NomadMail behavior.",
       "Read workspaceState.text before answering so the latest durable session state is included before live status refresh.",
+      "Use agentUserFlow.text as the user-facing conversation contract from first prompt through daily-mail query choices.",
       "Resolve the user's locale and time zone before parsing relative or ambiguous dates. Store normalized timestamps as UTC ISO 8601, but present user-facing times in the user's locale and time zone.",
       "When the user asks for the latest email, newest mail, recent message, or latest email content, treat that read request as approval to run one request-scoped live sync against already configured/enabled accounts before answering.",
       "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations. Then report tray availability and ask before starting the compiled tray client.",
@@ -372,7 +394,22 @@ function agentGuide() {
       defaultDataDir: join(repoRoot, "data"),
       activeDataDir: dataDir(),
       rule: "NomadMail writes to NOMADINBOX_DATA_DIR when that environment variable is set. If it is not set, imports and syncs write to NomadInbox's own data directory.",
-      targetRepoRule: "For another repository, start the NomadMail MCP/HTTP service or CLI with NOMADINBOX_DATA_DIR set to a staging folder inside that target repository, for example <targetRepo>\\.nomadmail-staging."
+      targetRepoRule: "For another repository, start the NomadMail MCP/HTTP service or CLI with NOMADINBOX_DATA_DIR set to a staging folder inside that target repository, for example <targetRepo>\\.nomadmail-staging.",
+      rawProviderStore: join(dataDir(), "provider-raw.jsonl"),
+      normalizationRule: "Provider adapters store canonical records in messages.jsonl and provider-specific snapshots in provider-raw.jsonl. Agent/UI reads must normalize records before search, summaries, actions, or digest views."
+    },
+    generatedReportNaming: {
+      rule: "For broad email-range markdown, HTML, or JSON reports, include the mail source and a sortable date or time range in the folder or filename so users can manage generated files later.",
+      examples: [
+        "unread-outlook-2026-04-29-to-2026-05-06.md",
+        "unread-outlook-week-of-2026-05-06-index.md",
+        "gmail-takeout-2025.md"
+      ],
+      avoid: [
+        "unread-outlook-week.md",
+        "latest-mails.md",
+        "email-report.md"
+      ]
     },
     safeWorkflow: [
       "Confirm the user-approved source path and target repository before reading or importing email backups.",
@@ -380,6 +417,7 @@ function agentGuide() {
       "For target repository indexing, set NOMADINBOX_DATA_DIR to <targetRepo>\\.nomadmail-staging before running import or live sync.",
       "Import EML folders, Gmail Takeout MBOX files, or existing NomadMail JSONL through nomadmail_import_archive.",
       "Use the generated archive-messages.jsonl or messages.jsonl as the source for the target repository's importer.",
+      "When creating broad email report files for the user, use generatedReportNaming and put the source plus date range in the folder or filename.",
       "Run the target repository's own indexing command after import. Do not assume every repo uses the same index command.",
       "Use nomadmail_search_messages and nomadmail_get_message only after indexing or staging paths are clear."
     ],
@@ -436,6 +474,10 @@ function dataDir() {
 
 function messagesPath() {
   return join(dataDir(), "messages.jsonl");
+}
+
+function providerRawPath() {
+  return join(dataDir(), "provider-raw.jsonl");
 }
 
 function archiveMessagesPath() {
@@ -560,8 +602,9 @@ function parseJsonOutput(stdout) {
   }
 }
 
-function runPowerShellJson(filePath, args, unavailableName = "NomadInbox CLI") {
+function runPowerShellJson(filePath, args, unavailableName = "NomadInbox CLI", options = {}) {
   return new Promise((resolvePromise, reject) => {
+    const timeoutMs = Number.parseInt(options.timeoutMs || "0", 10);
     const child = spawn(
       powershellExe(),
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", filePath, ...args],
@@ -574,6 +617,51 @@ function runPowerShellJson(filePath, args, unavailableName = "NomadInbox CLI") {
 
     let stdout = "";
     let stderr = "";
+    let completed = false;
+    let timer = null;
+
+    function settleResolve(value) {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      resolvePromise(value);
+    }
+
+    function settleReject(error) {
+      if (completed) {
+        return;
+      }
+      completed = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+      reject(error);
+    }
+
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        const wrapped = new Error(`${unavailableName} timed out after ${timeoutMs}ms`);
+        wrapped.details = {
+          status: "unavailable",
+          service: "NomadInbox",
+          code: "timeout",
+          command: powershellExe(),
+          args,
+          timeoutMs,
+          runtime: runtimeInfo(),
+        };
+        try {
+          child.kill();
+        } catch {
+        }
+        settleReject(wrapped);
+      }, timeoutMs);
+    }
+
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString("utf8");
     });
@@ -593,14 +681,17 @@ function runPowerShellJson(filePath, args, unavailableName = "NomadInbox CLI") {
           ? "Install or repair Windows PowerShell, then run scripts/install-windows-agent-helper.ps1."
           : "Install PowerShell Core as pwsh for CLI-backed tools, or use platform-independent NomadMail MCP tools for local JSONL search and message lookup.",
       };
-      reject(wrapped);
+      settleReject(wrapped);
     });
     child.on("close", (code) => {
+      if (completed) {
+        return;
+      }
       let parsed = null;
       try {
         parsed = parseJsonOutput(stdout);
       } catch (error) {
-        reject(new Error(`${error.message}${stderr ? `; stderr: ${stderr.trim()}` : ""}`));
+        settleReject(new Error(`${error.message}${stderr ? `; stderr: ${stderr.trim()}` : ""}`));
         return;
       }
 
@@ -608,22 +699,22 @@ function runPowerShellJson(filePath, args, unavailableName = "NomadInbox CLI") {
         const detail = parsed || { status: "error", error: stderr.trim() || `Exited with code ${code}` };
         const error = new Error(detail.error || `${unavailableName} exited with code ${code}`);
         error.details = detail;
-        reject(error);
+        settleReject(error);
         return;
       }
 
-      resolvePromise(parsed);
+      settleResolve(parsed);
     });
   });
 }
 
-function runCli(args) {
-  return runPowerShellJson(cliPath, args, "NomadInbox CLI");
+function runCli(args, options = {}) {
+  return runPowerShellJson(cliPath, args, "NomadInbox CLI", options);
 }
 
-async function safeRunCli(args) {
+async function safeRunCli(args, options = {}) {
   try {
-    return await runCli(args);
+    return await runCli(args, options);
   } catch (error) {
     return {
       status: "unavailable",
@@ -660,46 +751,173 @@ function flattenAddress(value) {
   return String(value);
 }
 
+function normalizeAddress(value, fallbackName = null, fallbackEmail = "unknown@example.invalid") {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return {
+      name: value.name ?? fallbackName,
+      email: value.email || fallbackEmail,
+    };
+  }
+  const text = String(value || "").trim();
+  const match = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const email = match ? match[0] : (text || fallbackEmail);
+  const nameText = fallbackName || text.replace(/<[^>]+>/g, "").trim().replace(/^"|"$/g, "");
+  return {
+    name: nameText && nameText !== email ? nameText : null,
+    email,
+  };
+}
+
+function normalizeAddressList(value) {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeAddress(item)).filter((item) => item.email);
+  }
+  return String(value)
+    .split(/[;,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => normalizeAddress(item));
+}
+
+function normalizeAttachmentList(record) {
+  if (Array.isArray(record.attachments) && record.attachments.length > 0) {
+    return record.attachments.filter((attachment) => attachment !== null && attachment !== undefined).map((attachment, index) => {
+      if (typeof attachment === "string") {
+        return { id: String(index + 1), name: attachment, contentType: null, sizeBytes: null, localPath: null };
+      }
+      return {
+        id: String(attachment.id ?? attachment.attachmentId ?? index + 1),
+        name: String(attachment.name ?? attachment.fileName ?? attachment.displayName ?? `attachment-${index + 1}`),
+        contentType: attachment.contentType ?? attachment.mimeType ?? null,
+        sizeBytes: Number.isFinite(Number(attachment.sizeBytes ?? attachment.size)) ? Number(attachment.sizeBytes ?? attachment.size) : null,
+        localPath: attachment.localPath ?? null,
+      };
+    });
+  }
+  if (record.hasAttachments === true) {
+    return [{ id: "provider-attachments", name: "Attachments available from provider", contentType: null, sizeBytes: null, localPath: null }];
+  }
+  return [];
+}
+
+function normalizeCapabilities(record, sourceType) {
+  if (Array.isArray(record.capabilities) && record.capabilities.length > 0) {
+    return record.capabilities;
+  }
+  if (record.actionable === false || record.provider === "archive-import" || sourceType === "archive-import") {
+    return [];
+  }
+  const base = ["reply", "replyAll", "forward", "markRead", "markUnread", "move", "archive", "trash"];
+  if (record.provider === "gmail-api") {
+    return ["reply", "replyAll", "forward", "markRead", "markUnread", "star", "archive", "trash"];
+  }
+  if (normalizeAttachmentList(record).length > 0) {
+    return [...base, "saveAttachment"];
+  }
+  return base;
+}
+
+function normalizeMessageRecord(record, sourceType = "live-sync") {
+  const provider = record.provider || "sample";
+  const providerMessageId = record.providerMessageId || record.entryId || record.messageId || record.id || null;
+  const accountId = record.accountId || null;
+  const id = record.id || (providerMessageId ? `${provider}:${providerMessageId}` : null);
+  const from = normalizeAddress(record.from, record.fromName ?? null, record.fromEmail ?? "unknown@example.invalid");
+  const attachments = normalizeAttachmentList(record);
+  const normalizedSourceType = record.sourceType || sourceType;
+  const bodyText = record.bodyText ?? record.body ?? null;
+  const bodyHtml = record.bodyHtml ?? record.htmlBody ?? null;
+  return {
+    ...record,
+    schemaVersion: record.schemaVersion || 1,
+    id,
+    accountId,
+    provider,
+    providerMessageId,
+    conversationId: record.conversationId || record.threadId || null,
+    threadKey: record.threadKey || record.conversationId || record.threadId || null,
+    folder: record.folder || null,
+    subject: record.subject || "(no subject)",
+    from,
+    to: normalizeAddressList(record.to),
+    cc: normalizeAddressList(record.cc),
+    receivedAt: record.receivedAt || record.receivedUtc || record.received || null,
+    sentAt: record.sentAt || null,
+    snippet: record.snippet || record.preview || record.bodyPreview || null,
+    bodyText,
+    bodyHtml,
+    bodyTextAvailable: Boolean(record.bodyTextAvailable || bodyText),
+    bodyHtmlAvailable: Boolean(record.bodyHtmlAvailable || bodyHtml),
+    headers: record.headers && typeof record.headers === "object" ? record.headers : {},
+    unread: typeof record.unread === "boolean" ? record.unread : record.isRead === false,
+    flagged: Boolean(record.flagged || record.isMarkedAsTask),
+    importance: record.importance == null ? null : String(record.importance),
+    categories: Array.isArray(record.categories) ? record.categories : [],
+    attachments,
+    capabilities: normalizeCapabilities(record, normalizedSourceType),
+    sourceType: normalizedSourceType,
+    sourceProvider: record.sourceProvider || provider,
+    actionable: record.actionable !== false && normalizedSourceType !== "archive-import",
+    providerRawRef: record.providerRawRef || null,
+    rawCaptured: Boolean(record.rawCaptured || record.providerRawRef),
+    extractionStatus: record.extractionStatus || "notStarted",
+    normalizedAt: record.normalizedAt || null,
+  };
+}
+
 function searchText(record) {
+  const normalized = normalizeMessageRecord(record);
   return lower([
-    record.id,
-    record.provider,
-    record.folder,
-    record.subject,
-    flattenAddress(record.from),
-    flattenAddress(record.to),
-    flattenAddress(record.cc),
-    record.snippet,
-    record.bodyText,
+    normalized.id,
+    normalized.provider,
+    normalized.folder,
+    normalized.subject,
+    flattenAddress(normalized.from),
+    flattenAddress(normalized.to),
+    flattenAddress(normalized.cc),
+    normalized.snippet,
+    normalized.bodyText,
+    normalized.bodyHtml,
     record.searchableText,
   ].join(" "));
 }
 
 function messageTimestamp(record) {
-  const parsed = Date.parse(record.receivedAt || record.sentAt || record.importedAt || "");
+  const normalized = normalizeMessageRecord(record);
+  const parsed = Date.parse(normalized.receivedAt || normalized.sentAt || normalized.importedAt || "");
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function summarizeMessage(record, sourceType) {
-  const source = record.sourceType || sourceType;
+  const normalized = normalizeMessageRecord(record, sourceType);
+  const source = normalized.sourceType || sourceType;
   return {
-    id: record.id,
-    provider: record.provider,
+    id: normalized.id,
+    schemaVersion: normalized.schemaVersion,
+    provider: normalized.provider,
     sourceType: source,
-    providerMessageId: record.providerMessageId || null,
-    conversationId: record.conversationId || null,
-    folder: record.folder || null,
-    subject: record.subject || "(no subject)",
-    from: record.from || null,
-    to: record.to || [],
-    receivedAt: record.receivedAt || null,
-    receivedAtLocal: formatLocalTime(record.receivedAt || record.sentAt || record.importedAt || ""),
-    snippet: record.snippet || null,
-    unread: Boolean(record.unread),
-    flagged: Boolean(record.flagged),
-    actionable: record.actionable !== false,
-    capabilities: Array.isArray(record.capabilities) ? record.capabilities : [],
-    actionMenu: compactMailActionMenu(record, source),
+    providerMessageId: normalized.providerMessageId || null,
+    conversationId: normalized.conversationId || null,
+    threadKey: normalized.threadKey || null,
+    folder: normalized.folder || null,
+    subject: normalized.subject || "(no subject)",
+    from: normalized.from || null,
+    to: normalized.to || [],
+    receivedAt: normalized.receivedAt || null,
+    receivedAtLocal: formatLocalTime(normalized.receivedAt || normalized.sentAt || normalized.importedAt || ""),
+    snippet: normalized.snippet || null,
+    unread: Boolean(normalized.unread),
+    flagged: Boolean(normalized.flagged),
+    attachmentCount: normalized.attachments.length,
+    actionable: normalized.actionable !== false,
+    capabilities: Array.isArray(normalized.capabilities) ? normalized.capabilities : [],
+    providerRawRef: normalized.providerRawRef || null,
+    rawCaptured: Boolean(normalized.rawCaptured),
+    extractionStatus: normalized.extractionStatus || "notStarted",
+    actionMenu: compactMailActionMenu(normalized, source),
   };
 }
 
@@ -818,12 +1036,14 @@ function mailActionGuide(record) {
 }
 
 function hasMessageContent(record) {
-  return [record.snippet, record.bodyText, record.bodyHtml]
+  const normalized = normalizeMessageRecord(record);
+  return [normalized.snippet, normalized.bodyText, normalized.bodyHtml]
     .some((value) => typeof value === "string" && value.trim().length > 0);
 }
 
 function contentPreview(record) {
-  for (const value of [record.snippet, record.bodyText, record.bodyHtml]) {
+  const normalized = normalizeMessageRecord(record);
+  for (const value of [normalized.snippet, normalized.bodyText, normalized.bodyHtml]) {
     if (typeof value === "string" && value.trim().length > 0) {
       return value.trim().slice(0, 600);
     }
@@ -846,7 +1066,7 @@ async function* readJsonLines(path) {
   const stream = createReadStream(path, { encoding: "utf8" });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
   for await (const line of rl) {
-    const trimmed = line.trim();
+    const trimmed = line.trim().replace(/^\uFEFF/, "");
     if (trimmed.length === 0) {
       continue;
     }
@@ -887,17 +1107,18 @@ async function searchMessages(args = {}) {
       if (!record.id) {
         continue;
       }
-      if (provider && lower(record.provider) !== provider) {
+      const normalized = normalizeMessageRecord(record, sourceType);
+      if (provider && lower(normalized.provider) !== provider) {
         continue;
       }
-      if (folder && lower(record.folder) !== folder) {
+      if (folder && lower(normalized.folder) !== folder) {
         continue;
       }
-      const haystack = searchText(record);
+      const haystack = searchText(normalized);
       if (tokens.some((token) => !haystack.includes(token))) {
         continue;
       }
-      addTopResult(results, summarizeMessage(record, sourceType), limit);
+      addTopResult(results, summarizeMessage(normalized, sourceType), limit);
     }
   }
 
@@ -936,18 +1157,19 @@ async function getLatestMessage(args = {}) {
     if (!record.id) {
       continue;
     }
-    if (provider && lower(record.provider) !== provider) {
+    const normalized = normalizeMessageRecord(record, "live-sync");
+    if (provider && lower(normalized.provider) !== provider) {
       continue;
     }
-    if (folder && lower(record.folder) !== folder) {
+    if (folder && lower(normalized.folder) !== folder) {
       continue;
     }
 
-    if (!latest || messageTimestamp(record) > messageTimestamp(latest)) {
-      latest = record;
+    if (!latest || messageTimestamp(normalized) > messageTimestamp(latest)) {
+      latest = normalized;
     }
-    if (hasMessageContent(record) && (!latestWithContent || messageTimestamp(record) > messageTimestamp(latestWithContent))) {
-      latestWithContent = record;
+    if (hasMessageContent(normalized) && (!latestWithContent || messageTimestamp(normalized) > messageTimestamp(latestWithContent))) {
+      latestWithContent = normalized;
     }
   }
 
@@ -994,11 +1216,13 @@ async function getMessage(args = {}) {
 
   const found = await findMessageRecord(args.id);
   if (found) {
+    const normalized = normalizeMessageRecord(found.record, found.record.sourceType || "live-sync");
     return {
       status: "ok",
       service: "NomadMail",
-      message: found.record,
-      actionGuide: mailActionGuide(found.record),
+      message: normalized,
+      rawRecordShape: found.record.schemaVersion ? "canonical" : "legacy-or-imported",
+      actionGuide: mailActionGuide(normalized),
     };
   }
 
@@ -1043,15 +1267,16 @@ async function getMessageActions(args = {}) {
     status: "ok",
     service: "NomadMail",
     message: summarizeMessage(found.record, found.record.sourceType || "live-sync"),
-    actionGuide: mailActionGuide(found.record),
+    actionGuide: mailActionGuide(normalizeMessageRecord(found.record, found.record.sourceType || "live-sync")),
   };
 }
 
 async function healthCheck() {
+  const healthCliOptions = { timeoutMs: 2500 };
   const [config, providers, serviceStatus] = await Promise.all([
-    safeRunCli(["config", "status"]),
-    safeRunCli(["providers", "list"]),
-    safeRunCli(["service", "status"]),
+    safeRunCli(["config", "status"], healthCliOptions),
+    safeRunCli(["providers", "list"], healthCliOptions),
+    safeRunCli(["service", "status"], healthCliOptions),
   ]);
   const cliAvailable = [config, providers, serviceStatus].every((item) => item?.status !== "unavailable");
 
@@ -1142,6 +1367,8 @@ async function callTool(name, args = {}) {
       return startupSystemPrompt();
     case "nomadmail_get_workspace_state":
       return workspaceState();
+    case "nomadmail_get_agent_user_flow":
+      return agentUserFlow();
     case "nomadmail_install_windows_helper":
       return installWindowsHelper(args);
     case "nomadmail_health_check":
@@ -1368,6 +1595,10 @@ async function handleHttp(req, res) {
       sendJson(res, 200, workspaceState());
       return;
     }
+    if (req.method === "GET" && url.pathname === "/agent-user-flow") {
+      sendJson(res, 200, agentUserFlow());
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/install/windows-helper") {
       sendJson(res, 200, await installWindowsHelper(await readBody(req)));
       return;
@@ -1476,6 +1707,7 @@ async function selfTest() {
   const guide = agentGuide();
   const prompt = startupSystemPrompt();
   const state = workspaceState();
+  const flow = agentUserFlow();
   return {
     status: "ok",
     service: "NomadMail",
@@ -1489,6 +1721,7 @@ async function selfTest() {
     agentGuideStatus: guide.status,
     startupSystemPromptStatus: prompt.status,
     workspaceStateStatus: state.status,
+    agentUserFlowStatus: flow.status,
   };
 }
 
@@ -1527,6 +1760,8 @@ if (mode === "mcp") {
   process.stdout.write(`${JSON.stringify(startupSystemPrompt(), null, 2)}\n`);
 } else if (mode === "workspace-state") {
   process.stdout.write(`${JSON.stringify(workspaceState(), null, 2)}\n`);
+} else if (mode === "agent-user-flow") {
+  process.stdout.write(`${JSON.stringify(agentUserFlow(), null, 2)}\n`);
 } else if (mode === "tools") {
   process.stdout.write(`${JSON.stringify({ status: "ok", service: "NomadMail", tools }, null, 2)}\n`);
 } else if (mode === "install-windows-helper") {
@@ -1543,6 +1778,6 @@ if (mode === "mcp") {
       process.exitCode = 1;
     });
 } else {
-  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|workspace-state|tools|install-windows-helper]\n");
+  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|workspace-state|agent-user-flow|tools|install-windows-helper]\n");
   process.exitCode = 2;
 }

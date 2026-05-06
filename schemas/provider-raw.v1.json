@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nomadinbox.local/schemas/provider-raw.v1.json",
+  "title": "NomadInbox Provider Raw Snapshot",
+  "type": "object",
+  "required": ["schemaVersion", "rawId", "messageId", "provider", "providerMessageId", "capturedAt", "raw"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "rawId": { "type": "string" },
+    "messageId": { "type": "string" },
+    "provider": { "type": "string", "enum": ["gmail-api", "outlook-graph", "outlook-desktop", "archive-import", "sample"] },
+    "accountId": { "type": ["string", "null"] },
+    "providerMessageId": { "type": "string" },
+    "conversationId": { "type": ["string", "null"] },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "bodyCaptured": { "type": "boolean" },
+    "attachmentMetadataCaptured": { "type": "boolean" },
+    "attachmentBytesCaptured": { "type": "boolean" },
+    "raw": { "type": ["object", "array", "string", "number", "boolean", "null"] }
+  }
+}

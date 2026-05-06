@@ -92,6 +92,7 @@ $state = [pscustomobject]@{
     accountsConfigPath = $accountsConfigPath
     syncStatusPath = Join-Path $resolvedDataDir "sync-status.json"
     messagesPath = Join-Path $resolvedDataDir "messages.jsonl"
+    providerRawPath = Join-Path $resolvedDataDir "provider-raw.jsonl"
     archiveMessagesPath = Join-Path $resolvedDataDir "archive-messages.jsonl"
     notes = @(
         "This helper tracks sync operations through sync-status.json and actions.jsonl in the configured data directory.",

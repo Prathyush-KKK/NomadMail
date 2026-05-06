@@ -60,9 +60,10 @@ When opening this workspace:
 
 1. Read this file first.
 2. Load {{PROMPT_RELATIVE_PATH}} or call nomadmail_get_startup_system_prompt.
-3. Refresh live status using NomadMail tools or service commands.
-4. Report current capabilities, storage boundaries, user locale/time-zone context when time scopes matter, approval-gated actions, Windows helper/tray status when applicable, and the safest next action.
-5. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval. Draft email before send, and require double explicit confirmation before trash/delete.
+3. Load docs/runbooks/agent-user-flow.md or call nomadmail_get_agent_user_flow.
+4. Refresh live status using NomadMail tools or service commands.
+5. Report current capabilities, storage boundaries, user locale/time-zone context when time scopes matter, approval-gated actions, Windows helper/tray status when applicable, and the safest next action.
+6. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval. Draft email before send, and require double explicit confirmation before trash/delete.
 
 ## Session State Update Rule
 

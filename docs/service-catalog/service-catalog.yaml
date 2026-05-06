@@ -20,6 +20,7 @@ services:
       - wrap-nomadinbox-cli
       - expose-startup-system-prompt
       - expose-workspace-state
+      - expose-agent-user-flow
       - search-local-message-store
       - sync-before-latest-email-read
       - expose-locale-time-context
@@ -38,6 +39,7 @@ services:
       - support-non-mcp-agents
       - expose-startup-system-prompt
       - expose-workspace-state
+      - expose-agent-user-flow
       - expose-locale-time-context
       - sync-before-latest-email-read
       - wrap-nomadinbox-cli

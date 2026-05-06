@@ -148,6 +148,22 @@ $env:NOMADINBOX_DATA_DIR="C:\Users\prat\AppData\Local\NomadInbox\data"
 
 Use the same environment variable before starting the tray, MCP server, or HTTP service if those processes should use that location.
 
+## Back Up Or Restore NomadMail Runtime Data
+
+NomadMail runtime backup/export is separate from importing external mail exports.
+
+Use [Runtime Backup And Restore](runtime-backup-restore.md) to export or restore:
+
+- live synced message records
+- provider raw snapshots
+- archive imported messages
+- sync and import status
+- local action audit logs
+- attachment files when enabled
+- local account config
+
+The current product has `backup status`, but not first-class `backup export` or `backup restore` CLI commands yet. The runbook uses explicit local PowerShell steps and keeps runtime backups out of git.
+
 ## Start Or Stop Background Sync
 
 Background sync is optional. It runs in the signed-in user session.

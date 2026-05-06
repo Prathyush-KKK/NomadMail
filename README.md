@@ -49,6 +49,8 @@ Agents should load [nomadmail-startup.system.md](prompts/nomadmail-startup.syste
 
 Agents should also read [WORKSPACE_STATE.md](docs/governance/WORKSPACE_STATE.md) before answering. It is the living current-state file that gets refreshed as sessions continue.
 
+The definitive user-facing setup and daily-mail query flow is documented in [Agent User Flow](docs/runbooks/agent-user-flow.md) and is exposed through `nomadmail_get_agent_user_flow` / HTTP `/agent-user-flow`.
+
 On first response, the agent should show what NomadInbox can do in this workspace now, which mail sources are available or need setup, where local data will be stored, which files are protected from GitHub, Windows helper and tray status on Windows, where temporary diagnostic scripts may be created if needed, the latest durable workspace state, what actions need approval, and the safest next step.
 
 After cloning and opening the workspace, the agent should explain to the user:
@@ -105,6 +107,8 @@ Ignored local files include:
 
 For another storage location, start the agent, CLI, tray, MCP server, or HTTP service with `NOMADINBOX_DATA_DIR` set to the target local data folder.
 
+To back up or restore NomadMail's own local runtime store, use [Runtime Backup And Restore](docs/runbooks/runtime-backup-restore.md). Archive import for external MBOX/EML/JSONL mail exports is separate and covered in [Archive Import](docs/runbooks/archive-import.md).
+
 ## Agent Callable Service
 
 NomadMail exposes NomadInbox to agents through:
@@ -114,6 +118,8 @@ NomadMail exposes NomadInbox to agents through:
 - the underlying PowerShell CLI
 
 The service supports provider/account discovery, one-shot sync, local message search, message lookup, UI-ready message action guidance, backup status, service status, background worker start/stop, agent guidance, and read-only archive import.
+
+Provider data is stored in two layers. `data\messages.jsonl` is the canonical normalized message view for agents and UI, while `data\provider-raw.jsonl` stores provider-specific snapshots keyed back to the canonical message. Account settings control whether raw provider data, bodies, attachment metadata, and attachment bytes are captured; attachment bytes stay off by default.
 
 Time handling is locale-aware. Set `NOMADINBOX_USER_CULTURE` or `NOMADINBOX_USER_LOCALE`, plus `NOMADINBOX_USER_TIME_ZONE` or `NOMADINBOX_USER_TIME_ZONE_IANA`, when an agent needs a specific user locale/time-zone context; otherwise NomadInbox uses the current OS user culture and local time zone. Stored timestamps remain UTC ISO 8601, while tray/dashboard/status text is shown in local user time.
 
@@ -125,7 +131,11 @@ Agents should call `nomadmail_get_agent_guide` or HTTP `/agent-guide` before syn
 
 Agents should load the built-in startup system prompt from `nomadmail_get_startup_system_prompt` or HTTP `/startup-system-prompt` when opening this repository as a workspace.
 
+Agents should load the user-facing conversation contract from `nomadmail_get_agent_user_flow` or HTTP `/agent-user-flow` before presenting first-run setup or daily-mail query choices.
+
 Agents may create temporary diagnostic scripts for complex local checks only under ignored scratch locations such as `runtime\agent-scratch\` or the OS temp directory. Tracked repository code should stay limited to durable sync, service, provider, tray, schema, and documented product behavior.
+
+For broad email reports, generated markdown, HTML, or JSON files should include the mail source and date range in the folder or filename. Use sortable, readable names such as `unread-outlook-2026-04-29-to-2026-05-06.md`, `unread-outlook-week-of-2026-05-06-index.md`, or `gmail-takeout-2025.md`; avoid vague names such as `unread-outlook-week.md` once the range contains many messages.
 
 The MCP server is a Node.js service intended to start on any OS, including direct launch with `node service/nomadmail-service.mjs mcp`. Windows agents should install the PowerShell helper for sync/account tracking. Non-Windows agents should keep using MCP for local JSONL context tools and return a clear unsupported-runtime response for Windows-only helper, tray, and Outlook Desktop operations. The Windows tray owns the long-running local HTTP service; MCP stdio remains client-launched.
 
@@ -175,6 +185,8 @@ Imported archive mail is read-only context. Live provider actions such as reply,
 ## Manual Setup
 
 For command-by-command setup, provider checks, imports, tray usage, MCP/HTTP launch, validation, and troubleshooting, use [Manual Setup](docs/runbooks/manual-setup.md).
+
+For cross-agent validation, current-workspace scenario testing, and brand-new clone testing, use [Testing Handoff](docs/runbooks/testing-handoff.md).
 
 ## Session State
 

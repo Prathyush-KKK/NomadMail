@@ -1,6 +1,6 @@
 # NomadInbox Workspace State
 
-Last updated: 2026-05-06
+Last updated: 2026-05-07
 
 ## Current Summary
 
@@ -23,9 +23,10 @@ When opening this workspace:
 
 1. Read this file first.
 2. Load prompts\nomadmail-startup.system.md or call nomadmail_get_startup_system_prompt.
-3. Refresh live status using NomadMail tools or service commands.
-4. Report current capabilities, storage boundaries, user locale/time-zone context when time scopes matter, approval-gated actions, Windows helper/tray status when applicable, and the safest next action.
-5. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval. Draft email before send, and require double explicit confirmation before trash/delete.
+3. Load docs/runbooks/agent-user-flow.md or call nomadmail_get_agent_user_flow.
+4. Refresh live status using NomadMail tools or service commands.
+5. Report current capabilities, storage boundaries, user locale/time-zone context when time scopes matter, approval-gated actions, Windows helper/tray status when applicable, and the safest next action.
+6. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval. Draft email before send, and require double explicit confirmation before trash/delete.
 
 ## Session State Update Rule
 
@@ -41,19 +42,19 @@ The state file should capture durable workspace behavior and follow-ups. It shou
 
 ## Latest Session
 
-Title: Message action guidance
+Title: Testing handoff and health readiness fixes
 
-Status: completed
+Status: validated
 
 Summary:
 
-- NomadMail now returns UI-ready mail action guidance after message discovery, with draft-before-send, explicit send approval, provider-runtime caveats, archive read-only handling, and double confirmation for trash/delete.
+- Added the cross-agent testing handoff with current input-output observations, validated current-workspace and clean-clone style scenarios, and bounded NomadMail health-check CLI calls so HTTP readiness stays responsive.
 
 Workspace revision:
 
 - Branch: main
-- HEAD: 9bc7b8b
+- HEAD: 7ab49d6
 
 ## Open Follow-Ups
 
-- Refresh live status at startup and continue from the latest user-approved source/action.
+- Run tests/new-clone.ps1 -ExpectedCleanClone from a real fresh clone on another machine and compare the generated JSON report against docs/runbooks/testing-handoff.md.

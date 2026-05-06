@@ -10,7 +10,11 @@
       "folder": "Inbox",
       "query": "",
       "limit": 25,
-      "intervalSeconds": 300
+      "intervalSeconds": 300,
+      "captureRawProviderData": true,
+      "includeBodies": false,
+      "includeAttachments": true,
+      "saveAttachments": false
     },
     {
       "id": "work-outlook-web",
@@ -20,7 +24,11 @@
       "folder": "Inbox",
       "query": "",
       "limit": 25,
-      "intervalSeconds": 300
+      "intervalSeconds": 300,
+      "captureRawProviderData": true,
+      "includeBodies": false,
+      "includeAttachments": true,
+      "saveAttachments": false
     },
     {
       "id": "desktop-outlook",
@@ -30,7 +38,11 @@
       "folder": "Inbox",
       "query": "",
       "limit": 25,
-      "intervalSeconds": 300
+      "intervalSeconds": 300,
+      "captureRawProviderData": true,
+      "includeBodies": false,
+      "includeAttachments": true,
+      "saveAttachments": false
     }
   ]
 }

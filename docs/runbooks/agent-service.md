@@ -40,6 +40,7 @@ Primary tools:
 - `nomadmail_get_agent_guide`
 - `nomadmail_get_startup_system_prompt`
 - `nomadmail_get_workspace_state`
+- `nomadmail_get_agent_user_flow`
 - `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
@@ -67,6 +68,7 @@ Common calls:
 Invoke-RestMethod http://127.0.0.1:8791/agent-guide
 Invoke-RestMethod http://127.0.0.1:8791/startup-system-prompt
 Invoke-RestMethod http://127.0.0.1:8791/workspace-state
+Invoke-RestMethod http://127.0.0.1:8791/agent-user-flow
 Invoke-RestMethod http://127.0.0.1:8791/health
 Invoke-RestMethod http://127.0.0.1:8791/providers
 Invoke-RestMethod "http://127.0.0.1:8791/messages?query=invoice&limit=5"
@@ -77,6 +79,14 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8791/messages/latest -Body '{"sy
 ## Guidance for Calling Agents
 
 Other agents should call `nomadmail_get_agent_guide` first. It returns the current storage boundary, safe import workflow, live-sync requirements, target-index handoff pattern, the canonical startup system prompt, and the living workspace state.
+
+Use [Agent User Flow](agent-user-flow.md), `nomadmail_get_agent_user_flow`, or HTTP `/agent-user-flow` as the user-facing conversation contract from first prompt through daily-mail query choices. The service runbook describes callable tools; the user-flow runbook describes what the agent should say and ask at each state.
+
+For the tested scenario inputs and expected/observed outputs, see
+[Agent User Flow Test Matrix](agent-user-flow-test-matrix.md).
+
+For cross-agent validation and brand-new clone testing, see
+[Testing Handoff](testing-handoff.md).
 
 The startup system prompt is owned by NomadInbox in `prompts/nomadmail-startup.system.md`. Agents should load it through `nomadmail_get_startup_system_prompt` or HTTP `/startup-system-prompt` when opening this repository as a workspace. This is system behavior, not a prompt the user is responsible for keeping in sync.
 
@@ -102,13 +112,15 @@ When an agent opens this repository as a user workspace:
 - If it is not Windows, do not install the Windows helper, start the tray, or offer Outlook Desktop COM sync. Use the MCP server for platform-independent local context tools and report what provider sync runtime is missing.
 - Do not discover credentials, mailbox profiles, exports, or connected accounts until the user approves the exact source and scope.
 - For complex PowerShell diagnostics, create temporary scripts only under ignored scratch locations such as `runtime\agent-scratch\` or the OS temp directory. Do not place ad hoc diagnostic scripts in `scripts\`, `src\`, `service\`, `docs\`, or the repository root. Keep tracked scripts for durable sync/service behavior.
+- For broad email-range outputs, give generated markdown, HTML, and JSON reports range-aware names. Include the source and a sortable date label in the folder or filename, for example `unread-outlook-2026-04-29-to-2026-05-06.md`, `unread-outlook-week-of-2026-05-06-index.md`, or `gmail-takeout-2025.md`.
 
 Use this rule before parsing or syncing email for another repository:
 
 - If the user wants NomadInbox's own local store updated, use the default service.
 - If the user wants another repository updated, start the MCP/HTTP service or CLI with `NOMADINBOX_DATA_DIR` set to a staging folder inside that target repository.
 - Run `dryRun=true` on `nomadmail_import_archive` before writing parsed records.
-- Hand the generated `archive-messages.jsonl` or `messages.jsonl` to the target repository's own importer and index command.
+- Hand the generated `archive-messages.jsonl`, `messages.jsonl`, and, when the target needs provider-specific evidence, `provider-raw.jsonl` to the target repository's own importer and index command.
+- Treat `messages.jsonl` as the normalized agent/UI contract. Treat `provider-raw.jsonl` as the provider-specific evidence store for fields that do not fit the canonical message model.
 
 Example external-repository staging flow:
 
@@ -153,6 +165,7 @@ npm run index
 ```powershell
 node .\service\nomadmail-service.mjs agent-guide
 node .\service\nomadmail-service.mjs workspace-state
+node .\service\nomadmail-service.mjs agent-user-flow
 node .\service\nomadmail-service.mjs install-windows-helper
 node .\service\nomadmail-service.mjs self-test
 node .\service\nomadmail-service.mjs tools
