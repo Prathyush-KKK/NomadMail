@@ -6,6 +6,7 @@ services:
     interfaces:
       - powershell
       - json-output
+      - user-environment-discovery
   - name: nomadmail-mcp-server
     type: local-agent-service
     status: bootstrapped
@@ -21,6 +22,7 @@ services:
       - expose-startup-system-prompt
       - expose-workspace-state
       - expose-agent-user-flow
+      - expose-cross-chat-handoff
       - search-local-message-store
       - sync-before-latest-email-read
       - expose-locale-time-context
@@ -40,6 +42,7 @@ services:
       - expose-startup-system-prompt
       - expose-workspace-state
       - expose-agent-user-flow
+      - expose-cross-chat-handoff
       - expose-locale-time-context
       - sync-before-latest-email-read
       - wrap-nomadinbox-cli

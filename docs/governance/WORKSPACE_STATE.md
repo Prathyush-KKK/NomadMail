@@ -10,7 +10,9 @@ Current workspace state:
 
 - NomadMail exposes agent guidance, startup system prompt, local message search, message lookup, permission-gated message action guidance, provider/account discovery, one-shot sync, archive import, service status, and background worker controls.
 - The startup system prompt is system-owned at prompts/nomadmail-startup.system.md.
+- Cross-chat handoff is system-owned at prompts/nomadmail-cross-chat-handoff.md and is exposed through nomadmail_get_cross_chat_handoff and HTTP /cross-chat-handoff.
 - On Windows, the PowerShell helper initializes ignored runtime state and account config without reading mail or starting auto sync.
+- On Windows, the helper registers user environment variables such as NOMADINBOX_HOME so future terminals and agent sessions can discover the workspace.
 - On Windows, the tray controller keeps the local NomadMail HTTP service available at 127.0.0.1:8791 while the tray is running. MCP stdio is still launched by each calling agent.
 - Date/time parsing uses the user's locale and time zone, then stores normalized UTC ISO timestamps.
 - Runtime data, account config, message stores, action logs, imported mail exports, token files, and scratch diagnostics stay out of GitHub.
@@ -21,12 +23,13 @@ Exact live counts, worker status, enabled accounts, and provider health are muta
 
 When opening this workspace:
 
-1. Read this file first.
+1. Read AGENTS.md and this file first.
 2. Load prompts\nomadmail-startup.system.md or call nomadmail_get_startup_system_prompt.
 3. Load docs/runbooks/agent-user-flow.md or call nomadmail_get_agent_user_flow.
-4. Refresh live status using NomadMail tools or service commands.
-5. Report current capabilities, storage boundaries, user locale/time-zone context when time scopes matter, approval-gated actions, Windows helper/tray status when applicable, and the safest next action.
-6. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval. Draft email before send, and require double explicit confirmation before trash/delete.
+4. For another chat session, use prompts/nomadmail-cross-chat-handoff.md, nomadmail_get_cross_chat_handoff, HTTP /cross-chat-handoff, or NOMADINBOX_HOME.
+5. Refresh live status using NomadMail tools or service commands.
+6. Report current capabilities, storage boundaries, user locale/time-zone context when time scopes matter, approval-gated actions, Windows helper/tray status when applicable, and the safest next action.
+7. Do not read mail, discover credentials, scan exports, enable accounts, start auto sync, store bodies, save attachments, or mutate mail without explicit approval. Draft email before send, and require double explicit confirmation before trash/delete.
 
 ## Session State Update Rule
 
@@ -42,19 +45,19 @@ The state file should capture durable workspace behavior and follow-ups. It shou
 
 ## Latest Session
 
-Title: Testing handoff and health readiness fixes
+Title: Cross-chat environment discovery
 
-Status: validated
+Status: completed
 
 Summary:
 
-- Added the cross-agent testing handoff with current input-output observations, validated current-workspace and clean-clone style scenarios, and bounded NomadMail health-check CLI calls so HTTP readiness stays responsive.
+- Added root agent bootstrap guidance and Windows user environment registration for NOMADINBOX_HOME and NomadMail handoff variables so another chat can discover the workspace and fetch the cross-chat handoff without the user memorizing commands.
 
 Workspace revision:
 
 - Branch: main
-- HEAD: 7ab49d6
+- HEAD: a643183
 
 ## Open Follow-Ups
 
-- Run tests/new-clone.ps1 -ExpectedCleanClone from a real fresh clone on another machine and compare the generated JSON report against docs/runbooks/testing-handoff.md.
+- Refresh live status at startup and continue from the latest user-approved source/action.

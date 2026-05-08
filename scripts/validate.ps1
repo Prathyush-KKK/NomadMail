@@ -3,11 +3,13 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $required = @(
     "README.md",
+    "AGENTS.md",
     ".gitignore",
     "VERSION",
     "config\nomad-inbox.example.ps1",
     "config\accounts.example.json",
     "prompts\nomadmail-startup.system.md",
+    "prompts\nomadmail-cross-chat-handoff.md",
     "assets\nomadinbox-mark.svg",
     "assets\nomadinbox-logo.svg",
     "assets\nomadinbox-tray.ico",

@@ -12,6 +12,7 @@ const repoRoot = resolve(__dirname, "..");
 const cliPath = join(repoRoot, "scripts", "nomad-inbox.ps1");
 const installerPath = join(repoRoot, "scripts", "install-windows-agent-helper.ps1");
 const startupSystemPromptPath = join(repoRoot, "prompts", "nomadmail-startup.system.md");
+const crossChatHandoffPath = join(repoRoot, "prompts", "nomadmail-cross-chat-handoff.md");
 const workspaceStatePath = join(repoRoot, "docs", "governance", "WORKSPACE_STATE.md");
 const agentUserFlowPath = join(repoRoot, "docs", "runbooks", "agent-user-flow.md");
 const versionPath = join(repoRoot, "VERSION");
@@ -83,6 +84,15 @@ const tools = [
     },
   },
   {
+    name: "nomadmail_get_cross_chat_handoff",
+    description: "Return the canonical handoff prompt for another AI chat session that needs to connect to this local NomadInbox/NomadMail workspace through MCP, local HTTP, or repo scripts.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
     name: "nomadmail_install_windows_helper",
     description: "Install the Windows PowerShell helper that initializes ignored runtime state and lets agents track sync operations and connected account config. Returns an explicit unsupported-platform response on non-Windows hosts.",
     inputSchema: {
@@ -100,6 +110,11 @@ const tools = [
           type: "boolean",
           default: false,
           description: "Start the Windows tray app after installing the helper. Use only after user approval.",
+        },
+        skipUserEnvironment: {
+          type: "boolean",
+          default: false,
+          description: "Skip registering NOMADINBOX_HOME and related user environment variables. Intended for tests and temporary installs.",
         },
       },
       additionalProperties: false,
@@ -360,6 +375,16 @@ function agentUserFlow() {
   };
 }
 
+function crossChatHandoff() {
+  return {
+    status: "ok",
+    service: "NomadMail",
+    name: "nomadmail-cross-chat-handoff",
+    path: crossChatHandoffPath,
+    text: readFileSync(crossChatHandoffPath, "utf8").replace(/\r\n/g, "\n").trim(),
+  };
+}
+
 function agentGuide() {
   return {
     status: "ok",
@@ -370,10 +395,12 @@ function agentGuide() {
     startupSystemPrompt: startupSystemPrompt(),
     workspaceState: workspaceState(),
     agentUserFlow: agentUserFlow(),
+    crossChatHandoff: crossChatHandoff(),
     startupGuidance: [
       "When opened in a user workspace, load startupSystemPrompt.text as the system-level instruction for NomadInbox/NomadMail behavior.",
       "Read workspaceState.text before answering so the latest durable session state is included before live status refresh.",
       "Use agentUserFlow.text as the user-facing conversation contract from first prompt through daily-mail query choices.",
+      "Use crossChatHandoff.text when the user wants another chat session or another agent to connect to this same local NomadInbox/NomadMail workspace.",
       "Resolve the user's locale and time zone before parsing relative or ambiguous dates. Store normalized timestamps as UTC ISO 8601, but present user-facing times in the user's locale and time zone.",
       "When the user asks for the latest email, newest mail, recent message, or latest email content, treat that read request as approval to run one request-scoped live sync against already configured/enabled accounts before answering.",
       "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations. Then report tray availability and ask before starting the compiled tray client.",
@@ -385,7 +412,7 @@ function agentGuide() {
     ],
     mcpPortability: {
       serverRuntime: "Node.js MCP/HTTP service intended to start on any OS with Node.js.",
-      platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_search_messages", "nomadmail_get_message", "nomadmail_get_message_actions"],
+      platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_get_cross_chat_handoff", "nomadmail_search_messages", "nomadmail_get_message", "nomadmail_get_message_actions"],
       hostRuntimeTools: ["nomadmail_health_check", "nomadmail_list_providers", "nomadmail_list_accounts", "nomadmail_sync_once", "nomadmail_get_latest_message", "nomadmail_get_backup_status", "nomadmail_get_service_status", "nomadmail_start_service", "nomadmail_stop_service", "nomadmail_import_archive"],
       hostRuntimeRequirement: "Provider sync and archive import currently delegate to the NomadInbox PowerShell core. Windows uses Windows PowerShell by default; non-Windows hosts need pwsh or a future native adapter.",
       windowsOnlyCapabilities: ["Outlook Desktop COM sync", "compiled system tray client", "Windows PowerShell helper install"]
@@ -1356,6 +1383,9 @@ async function installWindowsHelper(args = {}) {
   if (args.startTray) {
     installerArgs.push("-StartTray");
   }
+  if (args.skipUserEnvironment) {
+    installerArgs.push("-SkipUserEnvironment");
+  }
   return runPowerShellJson(installerPath, installerArgs, "NomadInbox Windows helper installer");
 }
 
@@ -1369,6 +1399,8 @@ async function callTool(name, args = {}) {
       return workspaceState();
     case "nomadmail_get_agent_user_flow":
       return agentUserFlow();
+    case "nomadmail_get_cross_chat_handoff":
+      return crossChatHandoff();
     case "nomadmail_install_windows_helper":
       return installWindowsHelper(args);
     case "nomadmail_health_check":
@@ -1599,6 +1631,10 @@ async function handleHttp(req, res) {
       sendJson(res, 200, agentUserFlow());
       return;
     }
+    if (req.method === "GET" && url.pathname === "/cross-chat-handoff") {
+      sendJson(res, 200, crossChatHandoff());
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/install/windows-helper") {
       sendJson(res, 200, await installWindowsHelper(await readBody(req)));
       return;
@@ -1708,6 +1744,7 @@ async function selfTest() {
   const prompt = startupSystemPrompt();
   const state = workspaceState();
   const flow = agentUserFlow();
+  const handoff = crossChatHandoff();
   return {
     status: "ok",
     service: "NomadMail",
@@ -1722,6 +1759,7 @@ async function selfTest() {
     startupSystemPromptStatus: prompt.status,
     workspaceStateStatus: state.status,
     agentUserFlowStatus: flow.status,
+    crossChatHandoffStatus: handoff.status,
   };
 }
 
@@ -1762,6 +1800,8 @@ if (mode === "mcp") {
   process.stdout.write(`${JSON.stringify(workspaceState(), null, 2)}\n`);
 } else if (mode === "agent-user-flow") {
   process.stdout.write(`${JSON.stringify(agentUserFlow(), null, 2)}\n`);
+} else if (mode === "cross-chat-handoff") {
+  process.stdout.write(`${JSON.stringify(crossChatHandoff(), null, 2)}\n`);
 } else if (mode === "tools") {
   process.stdout.write(`${JSON.stringify({ status: "ok", service: "NomadMail", tools }, null, 2)}\n`);
 } else if (mode === "install-windows-helper") {
@@ -1769,6 +1809,7 @@ if (mode === "mcp") {
     dataDir: parseArg("--data-dir", ""),
     installRoot: parseArg("--install-root", ""),
     startTray: hasArg("--start-tray"),
+    skipUserEnvironment: hasArg("--skip-user-env"),
   })
     .then((result) => {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
@@ -1778,6 +1819,6 @@ if (mode === "mcp") {
       process.exitCode = 1;
     });
 } else {
-  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|workspace-state|agent-user-flow|tools|install-windows-helper]\n");
+  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|workspace-state|agent-user-flow|cross-chat-handoff|tools|install-windows-helper]\n");
   process.exitCode = 2;
 }

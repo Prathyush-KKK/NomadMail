@@ -4,7 +4,7 @@ Goal:
 Make approved Gmail, Outlook, Outlook Desktop, and local email export context available to agents through the local NomadMail service while keeping mailbox data, credentials, sync logs, and indexes local and out of GitHub.
 
 On startup:
-1. Read `docs/governance/WORKSPACE_STATE.md` and `docs/runbooks/agent-user-flow.md` before answering, then detect the operating system and workspace path.
+1. Read `AGENTS.md`, `docs/governance/WORKSPACE_STATE.md`, and `docs/runbooks/agent-user-flow.md` before answering, then detect the operating system and workspace path. If another chat session needs to connect to this workspace, use `prompts/nomadmail-cross-chat-handoff.md`, `nomadmail_get_cross_chat_handoff`, or HTTP `/cross-chat-handoff`. On Windows, prefer `NOMADINBOX_HOME` when a new agent needs to discover the workspace from the user environment.
 2. Verify repository setup, NomadMail service health, provider availability, account config, and git ignore boundaries.
 3. If this is Windows, install the NomadInbox PowerShell helper so sync operations, connected account config, status files, and local message stores can be tracked. Then report Windows tray availability and ask whether to start the compiled tray client for the compact status popup, the always-on local HTTP agent service, and the future auto-sync toggle. Do not turn on auto sync yet.
 4. If this is not Windows, do not install the Windows helper, start the tray, or offer Outlook Desktop sync. Explain that the NomadMail MCP server is platform-independent for agent tool access, and that live provider sync needs PowerShell Core plus a supported provider runtime or a future native adapter.
@@ -33,6 +33,7 @@ Mail action follow-up:
 
 Service and tray setup:
 - On Windows, if the user explicitly asks to install, start, or run the NomadMail/NomadInbox service, treat that as approval to start the compiled tray client. Start the tray instead of starting only the raw HTTP server, because the tray owns the long-running local HTTP agent service.
+- The Windows helper registers user environment variables by default: `NOMADINBOX_HOME`, `NOMADMAIL_HANDOFF_COMMAND`, `NOMADMAIL_HANDOFF_URL`, `NOMADMAIL_HTTP_URL`, `NOMADMAIL_MCP_COMMAND`, and `NOMADMAIL_MCP_SCRIPT`. Use `.\scripts\nomad-inbox.ps1 env status` to verify them.
 - If the tray is already running, do not start a duplicate tray instance. Report that NomadMail is already available from the NomadInbox system tray icon. The default tray popup is a compact status/control window; Settings opens the larger diagnostics window.
 - The tray popup renders from cached state. Status refresh, Sync now, and auto-sync changes must show immediate UI feedback and then run asynchronously without blocking popup opening.
 - Use `.\scripts\nomad-inbox.ps1 tray status` for non-interactive tray verification. If the user says they cannot see the tray icon, check whether the tray process is running, then tell them to open the Windows notification overflow area. Only show process details or logs if they ask for diagnostics.
@@ -58,6 +59,7 @@ Commit policy:
 Response style:
 - Keep user-facing status short and outcome-focused.
 - When the service or tray is installed/running, tell the user they can access NomadMail from the NomadInbox system tray icon and that agents can use the local service.
+- When the user asks how to call NomadMail from another chat, point them to the cross-chat handoff prompt or serve it through `nomadmail_get_cross_chat_handoff` / `/cross-chat-handoff`.
 - Do not dump endpoint lists, raw health JSON, provider JSON, process tables, message IDs, or search results unless the user explicitly asks for diagnostics.
 - For successful setup or service start, prefer one short status sentence plus the next approval question.
 - A good service-start response is: "NomadMail is running from the NomadInbox system tray. Click the tray icon for Refresh, Sync now, auto sync, and account status, or open Settings from the tray for diagnostics; auto sync is still off until you enable it."

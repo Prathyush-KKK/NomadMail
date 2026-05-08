@@ -54,6 +54,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentUserFlow"
+  /cross-chat-handoff:
+    get:
+      operationId: nomadmailGetCrossChatHandoff
+      summary: Return the canonical cross-chat handoff prompt
+      description: Agents should use this when a different chat session needs to connect to the same local NomadInbox/NomadMail workspace through MCP, local HTTP, or repo scripts.
+      responses:
+        "200":
+          description: Cross-chat handoff prompt
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CrossChatHandoff"
   /health:
     get:
       operationId: nomadmailHealthCheck
@@ -80,6 +92,10 @@ paths:
                 startTray:
                   type: boolean
                   default: false
+                skipUserEnvironment:
+                  type: boolean
+                  default: false
+                  description: Skip user environment variable registration for tests and temporary installs.
       responses:
         "200":
           description: Install result or unsupported-platform response
@@ -356,6 +372,8 @@ components:
           $ref: "#/components/schemas/WorkspaceState"
         agentUserFlow:
           $ref: "#/components/schemas/AgentUserFlow"
+        crossChatHandoff:
+          $ref: "#/components/schemas/CrossChatHandoff"
         storageBoundary:
           type: object
           properties:
@@ -417,6 +435,19 @@ components:
         text:
           type: string
     AgentUserFlow:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        name:
+          type: string
+        path:
+          type: string
+        text:
+          type: string
+    CrossChatHandoff:
       type: object
       properties:
         status:

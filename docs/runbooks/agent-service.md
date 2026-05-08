@@ -35,12 +35,23 @@ Client command shape:
 }
 ```
 
+Workspace discovery after Windows helper install:
+
+```powershell
+$nomadInboxHome = [Environment]::GetEnvironmentVariable("NOMADINBOX_HOME", "User")
+cd $nomadInboxHome
+node .\service\nomadmail-service.mjs cross-chat-handoff
+```
+
+The helper registers these user environment variables by default: `NOMADINBOX_HOME`, `NOMADMAIL_HANDOFF_COMMAND`, `NOMADMAIL_HANDOFF_URL`, `NOMADMAIL_HTTP_URL`, `NOMADMAIL_MCP_COMMAND`, and `NOMADMAIL_MCP_SCRIPT`. Use `.\scripts\nomad-inbox.ps1 env status` to verify them. Tests and temporary helper installs should use `--skip-user-env`.
+
 Primary tools:
 
 - `nomadmail_get_agent_guide`
 - `nomadmail_get_startup_system_prompt`
 - `nomadmail_get_workspace_state`
 - `nomadmail_get_agent_user_flow`
+- `nomadmail_get_cross_chat_handoff`
 - `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
@@ -69,6 +80,7 @@ Invoke-RestMethod http://127.0.0.1:8791/agent-guide
 Invoke-RestMethod http://127.0.0.1:8791/startup-system-prompt
 Invoke-RestMethod http://127.0.0.1:8791/workspace-state
 Invoke-RestMethod http://127.0.0.1:8791/agent-user-flow
+Invoke-RestMethod http://127.0.0.1:8791/cross-chat-handoff
 Invoke-RestMethod http://127.0.0.1:8791/health
 Invoke-RestMethod http://127.0.0.1:8791/providers
 Invoke-RestMethod "http://127.0.0.1:8791/messages?query=invoice&limit=5"
@@ -81,6 +93,8 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8791/messages/latest -Body '{"sy
 Other agents should call `nomadmail_get_agent_guide` first. It returns the current storage boundary, safe import workflow, live-sync requirements, target-index handoff pattern, the canonical startup system prompt, and the living workspace state.
 
 Use [Agent User Flow](agent-user-flow.md), `nomadmail_get_agent_user_flow`, or HTTP `/agent-user-flow` as the user-facing conversation contract from first prompt through daily-mail query choices. The service runbook describes callable tools; the user-flow runbook describes what the agent should say and ask at each state.
+
+Use `nomadmail_get_cross_chat_handoff`, HTTP `/cross-chat-handoff`, or `prompts/nomadmail-cross-chat-handoff.md` when a different chat session needs to connect to the same local workspace. The handoff prompt tells the new agent how to load repo-owned context, prefer MCP or tray-owned HTTP, refresh current status, and preserve mailbox/source approval boundaries.
 
 For the tested scenario inputs and expected/observed outputs, see
 [Agent User Flow Test Matrix](agent-user-flow-test-matrix.md).
@@ -166,10 +180,12 @@ npm run index
 node .\service\nomadmail-service.mjs agent-guide
 node .\service\nomadmail-service.mjs workspace-state
 node .\service\nomadmail-service.mjs agent-user-flow
+node .\service\nomadmail-service.mjs cross-chat-handoff
 node .\service\nomadmail-service.mjs install-windows-helper
 node .\service\nomadmail-service.mjs self-test
 node .\service\nomadmail-service.mjs tools
 .\scripts\nomad-inbox.ps1 doctor
+.\scripts\nomad-inbox.ps1 env status
 .\scripts\nomad-inbox.ps1 service status
 .\scripts\nomad-inbox.ps1 tray status
 ```

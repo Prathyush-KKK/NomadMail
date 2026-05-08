@@ -43,6 +43,8 @@ If the repository is already cloned, open that local workspace instead. Example 
 C:\Users\prat\Documents\osm\NomadInbox
 ```
 
+After the Windows helper is installed, new terminals and agent sessions can also discover the workspace through the user environment variable `NOMADINBOX_HOME`. The helper also registers `NOMADMAIL_HANDOFF_COMMAND`, `NOMADMAIL_HANDOFF_URL`, `NOMADMAIL_HTTP_URL`, `NOMADMAIL_MCP_COMMAND`, and `NOMADMAIL_MCP_SCRIPT`.
+
 NomadInbox owns the startup system prompt. The user should not have to paste or maintain it.
 
 Agents should load [nomadmail-startup.system.md](prompts/nomadmail-startup.system.md) or call `nomadmail_get_startup_system_prompt` / HTTP `/startup-system-prompt`. The same prompt is also embedded in `nomadmail_get_agent_guide`.
@@ -50,6 +52,16 @@ Agents should load [nomadmail-startup.system.md](prompts/nomadmail-startup.syste
 Agents should also read [WORKSPACE_STATE.md](docs/governance/WORKSPACE_STATE.md) before answering. It is the living current-state file that gets refreshed as sessions continue.
 
 The definitive user-facing setup and daily-mail query flow is documented in [Agent User Flow](docs/runbooks/agent-user-flow.md) and is exposed through `nomadmail_get_agent_user_flow` / HTTP `/agent-user-flow`.
+
+For a different chat session or another agent, use [nomadmail-cross-chat-handoff.md](prompts/nomadmail-cross-chat-handoff.md), `nomadmail_get_cross_chat_handoff`, or HTTP `/cross-chat-handoff`. This is the repo-owned handoff prompt for reconnecting another chat to the same local workspace, tray-owned HTTP service, MCP server, and ignored runtime store.
+
+If the other agent only gets the workspace path, it should read [AGENTS.md](AGENTS.md) first. If it does not get the path, it can try `NOMADINBOX_HOME`:
+
+```powershell
+$nomadInboxHome = [Environment]::GetEnvironmentVariable("NOMADINBOX_HOME", "User")
+cd $nomadInboxHome
+node .\service\nomadmail-service.mjs cross-chat-handoff
+```
 
 On first response, the agent should show what NomadInbox can do in this workspace now, which mail sources are available or need setup, where local data will be stored, which files are protected from GitHub, Windows helper and tray status on Windows, where temporary diagnostic scripts may be created if needed, the latest durable workspace state, what actions need approval, and the safest next step.
 
@@ -68,6 +80,8 @@ On Windows, the tray controller is a compiled WinForms tray client. It keeps the
 The Windows helper install builds and uses an installed tray executable at `%LOCALAPPDATA%\NomadInbox\agent-helper\NomadInboxTray.exe`. The repository-local `target\` executable remains only a build fallback and is ignored by Git.
 
 Use `.\scripts\nomad-inbox.ps1 tray status` to verify whether the compiled tray is running, which helper install it is using, and whether local HTTP health is reachable.
+
+Use `.\scripts\nomad-inbox.ps1 env status` to verify whether the user environment variables for cross-chat discovery are registered.
 
 Agent status responses should stay short. If the user asks to install, start, or run the service on Windows, start or verify the tray controller and tell the user NomadMail is available from the NomadInbox system tray icon. Do not dump endpoint catalogs, raw health JSON, process lists, or message search results unless asked.
 
@@ -132,6 +146,8 @@ Agents should call `nomadmail_get_agent_guide` or HTTP `/agent-guide` before syn
 Agents should load the built-in startup system prompt from `nomadmail_get_startup_system_prompt` or HTTP `/startup-system-prompt` when opening this repository as a workspace.
 
 Agents should load the user-facing conversation contract from `nomadmail_get_agent_user_flow` or HTTP `/agent-user-flow` before presenting first-run setup or daily-mail query choices.
+
+Agents should use `nomadmail_get_cross_chat_handoff` or HTTP `/cross-chat-handoff` when the user wants another chat session or agent to connect to this same local workspace.
 
 Agents may create temporary diagnostic scripts for complex local checks only under ignored scratch locations such as `runtime\agent-scratch\` or the OS temp directory. Tracked repository code should stay limited to durable sync, service, provider, tray, schema, and documented product behavior.
 

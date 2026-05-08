@@ -23,9 +23,16 @@ try {
     if (@($accounts.accounts).Count -lt 3) { throw "expected account templates" }
 
     $installRoot = Join-Path $testRoot "agent-helper"
-    $install = & $cli install windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $installRoot | ConvertFrom-Json
+    $install = & $cli install windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $installRoot --skip-user-env | ConvertFrom-Json
     if ($install.status -ne "ok" -or -not (Test-Path -LiteralPath $install.helperPath) -or -not (Test-Path -LiteralPath $install.statusPath)) {
         throw "windows helper install failed"
+    }
+    if ($install.environment.registered -ne $false -or $install.environment.skipped -ne $true) {
+        throw "windows helper test install should skip user environment registration"
+    }
+    $envStatus = & $cli env status | ConvertFrom-Json
+    if ($envStatus.status -ne "ok" -or -not $envStatus.bootstrap.httpHandoffUrl) {
+        throw "environment status failed"
     }
 
     $trayStatus = & $cli tray status | ConvertFrom-Json
@@ -34,7 +41,7 @@ try {
     }
 
     $nodeInstallRoot = Join-Path $testRoot "agent-helper-node"
-    $nodeInstall = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") install-windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $nodeInstallRoot | ConvertFrom-Json
+    $nodeInstall = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") install-windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $nodeInstallRoot --skip-user-env | ConvertFrom-Json
     if ($nodeInstall.status -ne "ok" -or -not (Test-Path -LiteralPath $nodeInstall.helperPath) -or -not (Test-Path -LiteralPath $nodeInstall.statusPath)) {
         throw "node helper install command failed"
     }
@@ -120,7 +127,7 @@ This sample validates archive ingestion without using real mailbox exports.
     }
 
     $agentService = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") self-test | ConvertFrom-Json
-    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or $agentService.agentUserFlowStatus -ne "ok" -or -not $agentService.latestMessageStatus -or $agentService.messageActionsStatus -ne "ok") {
+    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or $agentService.agentUserFlowStatus -ne "ok" -or $agentService.crossChatHandoffStatus -ne "ok" -or -not $agentService.latestMessageStatus -or $agentService.messageActionsStatus -ne "ok") {
         throw "agent service self-test failed"
     }
 
@@ -134,9 +141,12 @@ This sample validates archive ingestion without using real mailbox exports.
     if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_agent_user_flow" }).Count -ne 1) {
         throw "agent user flow tool missing"
     }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_cross_chat_handoff" }).Count -ne 1) {
+        throw "cross-chat handoff tool missing"
+    }
 
     $agentGuide = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-guide | ConvertFrom-Json
-    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.storageBoundary.rawProviderStore -or $agentGuide.storageBoundary.normalizationRule -notlike "*provider-raw.jsonl*" -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.agentUserFlow.text -or $agentGuide.agentUserFlow.text -notlike "*Daily Mail Query Menu*" -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*") -or -not $agentGuide.generatedReportNaming -or $agentGuide.generatedReportNaming.rule -notlike "*date or time range*" -or -not $agentGuide.mailActionGuidance -or $agentGuide.mailActionGuidance.permissionModel.deleteApproval -notlike "*two explicit confirmations*") {
+    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.storageBoundary.rawProviderStore -or $agentGuide.storageBoundary.normalizationRule -notlike "*provider-raw.jsonl*" -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.agentUserFlow.text -or $agentGuide.agentUserFlow.text -notlike "*Daily Mail Query Menu*" -or -not $agentGuide.crossChatHandoff.text -or $agentGuide.crossChatHandoff.text -notlike "*nomadmail_get_cross_chat_handoff*" -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*") -or -not $agentGuide.generatedReportNaming -or $agentGuide.generatedReportNaming.rule -notlike "*date or time range*" -or -not $agentGuide.mailActionGuidance -or $agentGuide.mailActionGuidance.permissionModel.deleteApproval -notlike "*two explicit confirmations*") {
         throw "agent guide failed"
     }
 
@@ -148,6 +158,11 @@ This sample validates archive ingestion without using real mailbox exports.
     $agentUserFlow = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-user-flow | ConvertFrom-Json
     if ($agentUserFlow.status -ne "ok" -or $agentUserFlow.text -notlike "*Flow 1: First Prompt*" -or $agentUserFlow.text -notlike "*Flow 5: Daily Mail Query Menu*") {
         throw "agent user flow failed"
+    }
+
+    $crossChatHandoff = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") cross-chat-handoff | ConvertFrom-Json
+    if ($crossChatHandoff.status -ne "ok" -or $crossChatHandoff.text -notlike "*Prompt To Give Another Agent*" -or $crossChatHandoff.text -notlike "*nomadmail_get_cross_chat_handoff*") {
+        throw "cross-chat handoff failed"
     }
 
     $workspaceState = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") workspace-state | ConvertFrom-Json
@@ -163,7 +178,7 @@ This sample validates archive ingestion without using real mailbox exports.
 
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "install windows helper", "tray status", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "message actions tool", "agent user flow tool", "agent guide", "startup system prompt", "agent user flow", "workspace state", "versioned installer package")
+        tests = @("doctor", "providers list", "accounts list", "install windows helper", "environment status", "tray status", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "message actions tool", "agent user flow tool", "cross-chat handoff tool", "agent guide", "startup system prompt", "agent user flow", "cross-chat handoff", "workspace state", "versioned installer package")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {

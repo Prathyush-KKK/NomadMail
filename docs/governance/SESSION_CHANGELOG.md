@@ -1,5 +1,23 @@
 # Session Architecture Changelog
 
+## 2026-05-07 - Cross-chat environment discovery
+
+Summary:
+
+- Added root agent bootstrap guidance and Windows user environment registration for NOMADINBOX_HOME and NomadMail handoff variables so another chat can discover the workspace and fetch the cross-chat handoff without the user memorizing commands.
+
+Session note:
+
+- docs/governance/session-updates/20260507-215854-cross-chat-environment-discovery.md
+## 2026-05-07 - Cross-chat handoff service surface
+
+Summary:
+
+- Added a repo-owned cross-chat handoff prompt and exposed it through NomadMail MCP, HTTP, CLI, agent guide, OpenAPI, runbooks, and tests so another chat session can reconnect to the same local workspace safely.
+
+Session note:
+
+- docs/governance/session-updates/20260507-164649-cross-chat-handoff-service-surface.md
 ## 2026-05-06 - Message action guidance
 
 Summary:

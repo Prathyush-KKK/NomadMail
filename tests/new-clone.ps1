@@ -194,12 +194,14 @@ try {
         $tools = & node $service tools | ConvertFrom-Json
         $prompt = & node $service system-prompt | ConvertFrom-Json
         $flow = & node $service agent-user-flow | ConvertFrom-Json
+        $handoff = & node $service cross-chat-handoff | ConvertFrom-Json
         $guide = & node $service agent-guide | ConvertFrom-Json
         $requiredTools = @(
             "nomadmail_get_agent_guide",
             "nomadmail_get_startup_system_prompt",
             "nomadmail_get_workspace_state",
             "nomadmail_get_agent_user_flow",
+            "nomadmail_get_cross_chat_handoff",
             "nomadmail_search_messages",
             "nomadmail_get_latest_message",
             "nomadmail_get_message_actions",
@@ -211,11 +213,14 @@ try {
         }
         Assert-NewClone ($prompt.text -like "*docs/runbooks/agent-user-flow.md*") "startup prompt does not reference agent-user-flow"
         Assert-NewClone ($flow.text -like "*Daily Mail Query Menu*") "agent user flow does not include daily mail choices"
+        Assert-NewClone ($handoff.text -like "*Prompt To Give Another Agent*") "cross-chat handoff does not include agent handoff prompt"
         Assert-NewClone ($guide.agentUserFlow.text -like "*Daily Mail Query Menu*") "agent guide does not embed user flow"
+        Assert-NewClone ($guide.crossChatHandoff.text -like "*Prompt To Give Another Agent*") "agent guide does not embed cross-chat handoff"
         [pscustomobject]@{
             toolCount = @($tools.tools).Count
             startupPrompt = $prompt.status
             agentUserFlow = $flow.status
+            crossChatHandoff = $handoff.status
             agentGuide = $guide.status
         }
     }
@@ -284,14 +289,16 @@ This validates that a brand new clone can import and search read-only archive co
     if ($IsWindows -or [System.Environment]::OSVersion.Platform -eq "Win32NT") {
         Invoke-Check "windows helper install dry bootstrap" {
             $installRoot = Join-Path $testRoot "agent-helper"
-            $install = & $cli install windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $installRoot | ConvertFrom-Json
+            $install = & $cli install windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $installRoot --skip-user-env | ConvertFrom-Json
             Assert-NewClone ($install.status -eq "ok") "windows helper install failed"
             Assert-NewClone (Test-Path -LiteralPath $install.helperPath) "helper launcher missing"
             Assert-NewClone (Test-Path -LiteralPath $install.statusPath) "helper status missing"
+            Assert-NewClone ($install.environment.skipped -eq $true) "test helper install should skip user environment registration"
             [pscustomobject]@{
                 status = $install.status
                 platform = $install.platform
                 trayStarted = $install.trayStarted
+                userEnvironmentSkipped = $install.environment.skipped
             }
         }
     } else {

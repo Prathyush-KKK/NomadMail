@@ -132,9 +132,13 @@ This archive-only message validates the daily mail query path, read-only action 
 
     $tools = & node $service tools | ConvertFrom-Json
     Assert-Flow ((@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_agent_user_flow" }).Count) -eq 1) "agent user flow tool is missing"
+    Assert-Flow ((@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_cross_chat_handoff" }).Count) -eq 1) "cross-chat handoff tool is missing"
 
     $flowCli = & node $service agent-user-flow | ConvertFrom-Json
     Assert-Flow ($flowCli.status -eq "ok" -and $flowCli.text -like "*Flow 1: First Prompt*" -and $flowCli.text -like "*Flow 5: Daily Mail Query Menu*") "agent user flow CLI output is incomplete"
+
+    $handoffCli = & node $service cross-chat-handoff | ConvertFrom-Json
+    Assert-Flow ($handoffCli.status -eq "ok" -and $handoffCli.text -like "*Prompt To Give Another Agent*") "cross-chat handoff CLI output is incomplete"
     Add-Scenario $scenarios "first prompt in fresh workspace" "Show capabilities, storage boundary, helper/tray/MCP state, approval gates, and ask the user to choose one source and one scope."
 
     Assert-Flow ($flowCli.text -like "*I will set up <source> for <scope>*" -and $flowCli.text -like "*I will not send, delete, move, or save attachments*") "source approval output is missing safety wording"
@@ -165,13 +169,16 @@ This archive-only message validates the daily mail query path, read-only action 
     Assert-Flow ($state.status -eq "ok" -and $state.text -like "*agent-user-flow.md*") "workspace state does not mention agent-user-flow"
 
     $guide = & node $service agent-guide | ConvertFrom-Json
-    Assert-Flow ($guide.status -eq "ok" -and $guide.agentUserFlow.text -like "*Daily Mail Query Menu*" -and (($guide.startupGuidance -join " ") -like "*agentUserFlow.text*")) "agent guide does not expose user flow"
+    Assert-Flow ($guide.status -eq "ok" -and $guide.agentUserFlow.text -like "*Daily Mail Query Menu*" -and $guide.crossChatHandoff.text -like "*Prompt To Give Another Agent*" -and (($guide.startupGuidance -join " ") -like "*agentUserFlow.text*") -and (($guide.startupGuidance -join " ") -like "*crossChatHandoff.text*")) "agent guide does not expose user flow and cross-chat handoff"
 
     $flowHttp = Invoke-RestMethod -Uri "$baseUri/agent-user-flow" -TimeoutSec 5
     Assert-Flow ($flowHttp.status -eq "ok" -and $flowHttp.text -like "*Flow End State*") "HTTP /agent-user-flow output is incomplete"
 
+    $handoffHttp = Invoke-RestMethod -Uri "$baseUri/cross-chat-handoff" -TimeoutSec 5
+    Assert-Flow ($handoffHttp.status -eq "ok" -and $handoffHttp.text -like "*Prompt To Give Another Agent*") "HTTP /cross-chat-handoff output is incomplete"
+
     $guideHttp = Invoke-RestMethod -Uri "$baseUri/agent-guide" -TimeoutSec 5
-    Assert-Flow ($guideHttp.status -eq "ok" -and $guideHttp.agentUserFlow.text -like "*Daily Mail Query Menu*") "HTTP /agent-guide does not embed user flow"
+    Assert-Flow ($guideHttp.status -eq "ok" -and $guideHttp.agentUserFlow.text -like "*Daily Mail Query Menu*" -and $guideHttp.crossChatHandoff.text -like "*Prompt To Give Another Agent*") "HTTP /agent-guide does not embed user flow and cross-chat handoff"
 
     $search = Invoke-RestMethod -Uri "$baseUri/messages?query=daily%20flow&limit=5" -TimeoutSec 5
     Assert-Flow ($search.status -eq "ok" -and $search.count -ge 1) "archive search did not return imported scenario message"

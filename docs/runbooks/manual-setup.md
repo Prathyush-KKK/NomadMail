@@ -38,8 +38,15 @@ Expected result:
 - `config\accounts.json` is created if missing
 - a local helper launcher is written under `%LOCALAPPDATA%\NomadInbox\agent-helper`
 - the helper status file records the data directory, account config path, sync status path, and message store paths
+- user environment variables are registered for future agent sessions, including `NOMADINBOX_HOME` and `NOMADMAIL_HANDOFF_COMMAND`
 
 The helper does not connect accounts, read mailbox data, or start auto sync by itself.
+
+Verify cross-chat discovery:
+
+```powershell
+.\scripts\nomad-inbox.ps1 env status
+```
 
 On non-Windows systems, do not install this helper or offer Outlook Desktop sync. The NomadMail MCP server is Node-based and can still expose local JSONL context tools. Live provider sync currently needs PowerShell Core (`pwsh`) plus a supported provider runtime, or a future native adapter.
 

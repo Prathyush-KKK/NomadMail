@@ -1,6 +1,12 @@
 param(
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$Argv
+    [Parameter(Position = 0)]
+    [string]$Command,
+
+    [Parameter(Position = 1)]
+    [string]$Subcommand,
+
+    [Parameter(Position = 2, ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArgs
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,7 +19,7 @@ if (Test-Path -LiteralPath $configPath) {
 
 Import-Module (Join-Path $repoRoot "src\NomadInbox\NomadInbox.psm1") -Force -DisableNameChecking
 
-if ($null -eq $Argv) { $Argv = @() }
+if ($null -eq $RemainingArgs) { $RemainingArgs = @() }
 
 function Write-Usage {
     @"
@@ -24,6 +30,7 @@ Setup:
   .\scripts\nomad-inbox.ps1 doctor
   .\scripts\nomad-inbox.ps1 config status
   .\scripts\nomad-inbox.ps1 install windows-helper
+  .\scripts\nomad-inbox.ps1 env status
 
 Discovery:
   .\scripts\nomad-inbox.ps1 providers list
@@ -52,6 +59,39 @@ Background sync:
 
 This bootstrap does not ship mailbox data, token caches, or secrets.
 "@
+}
+
+function Get-NomadInboxEnvironmentStatus {
+    $names = @(
+        "NOMADINBOX_HOME",
+        "NOMADMAIL_HANDOFF_COMMAND",
+        "NOMADMAIL_HANDOFF_URL",
+        "NOMADMAIL_HTTP_URL",
+        "NOMADMAIL_MCP_COMMAND",
+        "NOMADMAIL_MCP_SCRIPT"
+    )
+    $processVars = [ordered]@{}
+    $userVars = [ordered]@{}
+    foreach ($name in $names) {
+        $processVars[$name] = [System.Environment]::GetEnvironmentVariable($name, "Process")
+        $userVars[$name] = [System.Environment]::GetEnvironmentVariable($name, "User")
+    }
+    $nomadInboxHome = [string]$userVars["NOMADINBOX_HOME"]
+    $effectiveHome = if ([string]::IsNullOrWhiteSpace($nomadInboxHome)) { [string]$processVars["NOMADINBOX_HOME"] } else { $nomadInboxHome }
+    return [pscustomobject]@{
+        status = "ok"
+        service = "NomadInbox"
+        repoRoot = $repoRoot
+        effectiveHome = $effectiveHome
+        discoverable = (-not [string]::IsNullOrWhiteSpace($effectiveHome) -and (Test-Path -LiteralPath $effectiveHome))
+        process = $processVars
+        user = $userVars
+        bootstrap = [pscustomobject]@{
+            commandFromUserEnvironment = if (-not [string]::IsNullOrWhiteSpace($nomadInboxHome)) { "node `"$nomadInboxHome\service\nomadmail-service.mjs`" cross-chat-handoff" } else { $null }
+            httpHandoffUrl = "http://127.0.0.1:8791/cross-chat-handoff"
+        }
+        note = "Install windows-helper registers user environment variables by default. New terminals and agent sessions can discover the workspace through NOMADINBOX_HOME."
+    }
 }
 
 function Get-NomadInboxTrayProcess {
@@ -227,10 +267,6 @@ function Get-NomadInboxTrayStatus {
     }
 }
 
-$Command = if ($Argv.Count -gt 0) { $Argv[0] } else { $null }
-$Subcommand = if ($Argv.Count -gt 1) { $Argv[1] } else { $null }
-$RemainingArgs = if ($Argv.Count -gt 2) { @($Argv[2..($Argv.Count - 1)]) } else { @() }
-
 try {
     if ([string]::IsNullOrWhiteSpace($Command) -or $Command -in @("-h", "--help", "help")) {
         Write-Usage
@@ -245,13 +281,18 @@ try {
             if ($Subcommand -ne "windows-helper") { throw "Unsupported install subcommand. Use: install windows-helper" }
             $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
             $installer = Join-Path $repoRoot "scripts\install-windows-agent-helper.ps1"
-            $installerArgs = @()
+            $installerArgs = @{}
             $dataDir = Get-NomadInboxOption $options "data-dir" ""
-            if (-not [string]::IsNullOrWhiteSpace($dataDir)) { $installerArgs += @("-DataDir", $dataDir) }
+            if (-not [string]::IsNullOrWhiteSpace($dataDir)) { $installerArgs["DataDir"] = $dataDir }
             $installRoot = Get-NomadInboxOption $options "install-root" ""
-            if (-not [string]::IsNullOrWhiteSpace($installRoot)) { $installerArgs += @("-InstallRoot", $installRoot) }
-            if ($options.ContainsKey("start-tray")) { $installerArgs += "-StartTray" }
+            if (-not [string]::IsNullOrWhiteSpace($installRoot)) { $installerArgs["InstallRoot"] = $installRoot }
+            if ($options.ContainsKey("start-tray")) { $installerArgs["StartTray"] = $true }
+            if ($options.ContainsKey("skip-user-env")) { $installerArgs["SkipUserEnvironment"] = $true }
             & $installer @installerArgs
+        }
+        "env" {
+            if ($Subcommand -ne "status") { throw "Unsupported env subcommand. Use: env status" }
+            Get-NomadInboxEnvironmentStatus | ConvertTo-Json -Depth 20
         }
         "doctor" {
             Test-NomadInbox | ConvertTo-Json -Depth 20

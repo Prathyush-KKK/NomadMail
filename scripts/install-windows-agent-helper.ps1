@@ -1,7 +1,8 @@
 param(
     [string]$DataDir = "",
     [string]$InstallRoot = "",
-    [switch]$StartTray
+    [switch]$StartTray,
+    [switch]$SkipUserEnvironment
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,6 +80,35 @@ param(
 "@
 $helperScript | Set-Content -LiteralPath $helperPath -Encoding UTF8
 
+$handoffCommand = "node `"$repoRoot\service\nomadmail-service.mjs`" cross-chat-handoff"
+$mcpCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$repoRoot\scripts\nomadmail-mcp.ps1`""
+$environmentVariables = [ordered]@{
+    NOMADINBOX_HOME = $repoRoot
+    NOMADMAIL_HANDOFF_COMMAND = $handoffCommand
+    NOMADMAIL_HANDOFF_URL = "http://127.0.0.1:8791/cross-chat-handoff"
+    NOMADMAIL_HTTP_URL = "http://127.0.0.1:8791"
+    NOMADMAIL_MCP_COMMAND = $mcpCommand
+    NOMADMAIL_MCP_SCRIPT = Join-Path $repoRoot "scripts\nomadmail-mcp.ps1"
+}
+$environmentStatus = [pscustomobject]@{
+    registered = $false
+    scope = "User"
+    skipped = [bool]$SkipUserEnvironment
+    variables = $environmentVariables
+    message = ""
+}
+if (-not $SkipUserEnvironment) {
+    foreach ($name in $environmentVariables.Keys) {
+        $value = [string]$environmentVariables[$name]
+        [System.Environment]::SetEnvironmentVariable($name, $value, "User")
+        Set-Item -Path "Env:\$name" -Value $value
+    }
+    $environmentStatus.registered = $true
+    $environmentStatus.message = "Registered user environment variables. New terminals and agent sessions can discover NomadInbox through NOMADINBOX_HOME."
+} else {
+    $environmentStatus.message = "User environment variable registration was skipped for this install run."
+}
+
 $accountsConfigPath = Join-Path $repoRoot "config\accounts.json"
 $state = [pscustomobject]@{
     status = "ok"
@@ -94,10 +124,12 @@ $state = [pscustomobject]@{
     messagesPath = Join-Path $resolvedDataDir "messages.jsonl"
     providerRawPath = Join-Path $resolvedDataDir "provider-raw.jsonl"
     archiveMessagesPath = Join-Path $resolvedDataDir "archive-messages.jsonl"
+    environment = $environmentStatus
     notes = @(
         "This helper tracks sync operations through sync-status.json and actions.jsonl in the configured data directory.",
         "Connected accounts are tracked in config/accounts.json, which is ignored by git.",
-        "The helper does not connect accounts, read mailbox data, or start auto sync by itself."
+        "The helper does not connect accounts, read mailbox data, or start auto sync by itself.",
+        "NOMADINBOX_HOME lets new terminals and agent sessions discover this workspace after the helper has registered user environment variables."
     )
 }
 $state | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $statusPath -Encoding UTF8
@@ -137,6 +169,7 @@ if ($StartTray) {
     dataDir = $resolvedDataDir
     trayExePath = $installedTrayPath
     accountsConfigPath = $accountsConfigPath
+    environment = $environmentStatus
     trayStarted = [bool]$StartTray
     trayStatus = if ($trayStartResult) { $trayStartResult.tray } else { $null }
     trayPid = if ($trayStartResult) { $trayStartResult.pid } else { $null }
