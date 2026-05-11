@@ -45,18 +45,18 @@ The state file should capture durable workspace behavior and follow-ups. It shou
 
 ## Latest Session
 
-Title: Assigned-agent automation events
+Title: Windows startup tray popup and README onboarding
 
 Status: completed
 
 Summary:
 
-- Added local NomadMail automation events for assigned agents such as Codex, including MCP and HTTP event listing, acknowledgement, automation-cycle tools, Codex setup documentation, schema coverage, and synthetic tests.
+- Added approved Windows helper install flow for current-user startup shortcut and tray popup on launch, simplified README onboarding, widened NomadMail health CLI timeout, and validated tray, HTTP, MCP, smoke, agent-flow, and new-clone paths.
 
 Workspace revision:
 
 - Branch: main
-- HEAD: 9d3245e
+- HEAD: 08aedb1
 
 ## Open Follow-Ups
 

@@ -2,6 +2,8 @@ param(
     [string]$DataDir = "",
     [string]$InstallRoot = "",
     [switch]$StartTray,
+    [switch]$RegisterStartup,
+    [switch]$ShowPopupOnStartup,
     [switch]$SkipUserEnvironment
 )
 
@@ -80,6 +82,52 @@ param(
 "@
 $helperScript | Set-Content -LiteralPath $helperPath -Encoding UTF8
 
+function ConvertTo-NomadInboxShortcutArgument {
+    param([AllowNull()][string]$Value)
+
+    if ($null -eq $Value) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+    return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+$startupStatus = [pscustomobject]@{
+    registered = $false
+    shortcutPath = $null
+    showPopupOnStartup = [bool]$ShowPopupOnStartup
+    message = "Startup registration was not requested."
+}
+if ($RegisterStartup) {
+    $startupDir = [Environment]::GetFolderPath("Startup")
+    if ([string]::IsNullOrWhiteSpace($startupDir)) {
+        throw "Could not resolve the current user's Windows Startup folder."
+    }
+    New-Item -ItemType Directory -Force -Path $startupDir | Out-Null
+    $shortcutPath = Join-Path $startupDir "NomadInbox.lnk"
+    $shortcutArgs = @(
+        "--repo-root", (ConvertTo-NomadInboxShortcutArgument $repoRoot),
+        "--data-dir", (ConvertTo-NomadInboxShortcutArgument $resolvedDataDir),
+        "--host", "127.0.0.1",
+        "--port", "8791"
+    )
+    if ($ShowPopupOnStartup) {
+        $shortcutArgs += "--show-on-startup"
+    }
+    $wscript = New-Object -ComObject WScript.Shell
+    $shortcut = $wscript.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $installedTrayPath
+    $shortcut.Arguments = ($shortcutArgs -join " ")
+    $shortcut.WorkingDirectory = $repoRoot
+    $shortcut.IconLocation = "$installedTrayPath,0"
+    $shortcut.Description = "Start NomadInbox tray and local NomadMail service"
+    $shortcut.Save()
+    $startupStatus = [pscustomobject]@{
+        registered = $true
+        shortcutPath = $shortcutPath
+        showPopupOnStartup = [bool]$ShowPopupOnStartup
+        message = "Registered NomadInbox to start from the current user's Windows Startup folder."
+    }
+}
+
 $handoffCommand = "node `"$repoRoot\service\nomadmail-service.mjs`" cross-chat-handoff"
 $mcpCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$repoRoot\scripts\nomadmail-mcp.ps1`""
 $environmentVariables = [ordered]@{
@@ -125,6 +173,7 @@ $state = [pscustomobject]@{
     providerRawPath = Join-Path $resolvedDataDir "provider-raw.jsonl"
     archiveMessagesPath = Join-Path $resolvedDataDir "archive-messages.jsonl"
     environment = $environmentStatus
+    startup = $startupStatus
     notes = @(
         "This helper tracks sync operations through sync-status.json and actions.jsonl in the configured data directory.",
         "Connected accounts are tracked in config/accounts.json, which is ignored by git.",
@@ -141,7 +190,9 @@ if ($StartTray) {
     $env:NOMADINBOX_DATA_DIR = $resolvedDataDir
     $env:NOMADINBOX_TRAY_EXE = $installedTrayPath
     try {
-        $trayStartText = & $cli tray start
+        $trayStartArgs = @("tray", "start")
+        if ($ShowPopupOnStartup) { $trayStartArgs += "--show-popup" }
+        $trayStartText = & $cli @trayStartArgs
         if (-not [string]::IsNullOrWhiteSpace(($trayStartText | Out-String))) {
             $trayStartResult = ($trayStartText | Out-String | ConvertFrom-Json)
         }
@@ -170,6 +221,7 @@ if ($StartTray) {
     trayExePath = $installedTrayPath
     accountsConfigPath = $accountsConfigPath
     environment = $environmentStatus
+    startup = $startupStatus
     trayStarted = [bool]$StartTray
     trayStatus = if ($trayStartResult) { $trayStartResult.tray } else { $null }
     trayPid = if ($trayStartResult) { $trayStartResult.pid } else { $null }

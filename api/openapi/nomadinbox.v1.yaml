@@ -199,6 +199,14 @@ paths:
                 startTray:
                   type: boolean
                   default: false
+                registerStartup:
+                  type: boolean
+                  default: false
+                  description: Register the compiled tray app in the current user's Windows Startup folder.
+                showPopup:
+                  type: boolean
+                  default: false
+                  description: Open the tray status popup when the tray starts now and on future startup launches.
                 skipUserEnvironment:
                   type: boolean
                   default: false

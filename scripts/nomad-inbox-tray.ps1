@@ -2,6 +2,7 @@ param(
     [string]$RepoRoot = "",
     [string]$DataDir = "",
     [switch]$NoBuild,
+    [switch]$ShowOnStartup,
     [switch]$Wait
 )
 
@@ -59,6 +60,9 @@ $trayArgs = @(
     "--host", "127.0.0.1",
     "--port", "8791"
 )
+if ($ShowOnStartup) {
+    $trayArgs += "--show-on-startup"
+}
 
 if ($Wait) {
     & $exePath @trayArgs
@@ -72,6 +76,7 @@ if ($Wait) {
         trayClient = "compiled"
         pid = $process.Id
         exePath = $exePath
+        showOnStartup = [bool]$ShowOnStartup
         message = "NomadMail is available from the NomadInbox system tray icon. Open the Windows notification overflow if the icon is hidden."
     } | ConvertTo-Json -Depth 10
 }

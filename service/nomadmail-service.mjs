@@ -193,6 +193,16 @@ const tools = [
           default: false,
           description: "Start the Windows tray app after installing the helper. Use only after user approval.",
         },
+        registerStartup: {
+          type: "boolean",
+          default: false,
+          description: "Register the compiled tray app in the current user's Windows Startup folder. Use only after user approval.",
+        },
+        showPopup: {
+          type: "boolean",
+          default: false,
+          description: "Open the tray status popup when starting the tray now and on future Windows startup launches.",
+        },
         skipUserEnvironment: {
           type: "boolean",
           default: false,
@@ -604,7 +614,7 @@ function agentGuide() {
       "Use crossChatHandoff.text when the user wants another chat session or another agent to connect to this same local NomadInbox/NomadMail workspace.",
       "Resolve the user's locale and time zone before parsing relative or ambiguous dates. Store normalized timestamps as UTC ISO 8601, but present user-facing times in the user's locale and time zone.",
       "When the user asks for the latest email, newest mail, recent message, or latest email content, treat that read request as approval to run one request-scoped live sync against already configured/enabled accounts before answering.",
-      "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations. Then report tray availability and ask before starting the compiled tray client.",
+      "On Windows, call nomadmail_install_windows_helper or run scripts/install-windows-agent-helper.ps1 before connecting accounts. This initializes the ignored runtime store, account config, helper launcher, and status file used to track sync operations. For regular use after user approval, start the compiled tray, register it in the current user's Startup folder, and show the status popup.",
       "If the user explicitly asks to install, start, or run the service on Windows, start the compiled tray client instead of starting only the raw HTTP server. The tray owns the long-running local HTTP agent service and its popup/menu must not block on sync/status refresh.",
       "Starting the tray is allowed only after user approval and must not turn on auto sync by itself.",
       "After service or tray setup succeeds, keep the response short: tell the user NomadMail is available from the NomadInbox system tray and agents can use the local service. Do not print endpoint lists, raw health JSON, process tables, or search results unless diagnostics were requested.",
@@ -1747,7 +1757,7 @@ async function getMessageActions(args = {}) {
 }
 
 async function healthCheck() {
-  const healthCliOptions = { timeoutMs: 2500 };
+  const healthCliOptions = { timeoutMs: 15000 };
   const [config, providers, serviceStatus] = await Promise.all([
     safeRunCli(["config", "status"], healthCliOptions),
     safeRunCli(["providers", "list"], healthCliOptions),
@@ -1896,6 +1906,12 @@ async function installWindowsHelper(args = {}) {
   }
   if (args.startTray) {
     installerArgs.push("-StartTray");
+  }
+  if (args.registerStartup) {
+    installerArgs.push("-RegisterStartup");
+  }
+  if (args.showPopup) {
+    installerArgs.push("-ShowPopupOnStartup");
   }
   if (args.skipUserEnvironment) {
     installerArgs.push("-SkipUserEnvironment");
@@ -2418,6 +2434,8 @@ if (mode === "mcp") {
     dataDir: parseArg("--data-dir", ""),
     installRoot: parseArg("--install-root", ""),
     startTray: hasArg("--start-tray"),
+    registerStartup: hasArg("--register-startup"),
+    showPopup: hasArg("--show-popup"),
     skipUserEnvironment: hasArg("--skip-user-env"),
   })
     .then((result) => {

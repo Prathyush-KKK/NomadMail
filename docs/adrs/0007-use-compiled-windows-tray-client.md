@@ -27,6 +27,7 @@ The tray may start the existing Node HTTP service when needed, but provider/serv
 ## Consequences
 
 - Tray startup still works through `nomad-inbox.ps1 tray start`.
+- The helper can register the installed tray executable in the current user's Windows Startup folder and pass `--show-on-startup` so the status popup opens at login after user approval.
 - Windows hosts do not need `dotnet`; Windows PowerShell compiles the tray with the local .NET Framework compiler path.
 - The repository-local compiled executable is generated under ignored `target/` and should not be committed.
 - The Windows helper install creates an installed tray executable and sets `NOMADINBOX_TRAY_EXE` so the installed helper uses that copy instead of the repository-local build output.

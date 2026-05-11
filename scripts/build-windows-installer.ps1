@@ -115,7 +115,9 @@ $installScript = @'
 param(
     [string]$DataDir = "",
     [string]$InstallRoot = "",
-    [switch]$StartTray
+    [switch]$StartTray,
+    [switch]$RegisterStartup,
+    [switch]$ShowPopup
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,6 +133,12 @@ if (-not [string]::IsNullOrWhiteSpace($InstallRoot)) {
 }
 if ($StartTray) {
     $args += "--start-tray"
+}
+if ($RegisterStartup) {
+    $args += "--register-startup"
+}
+if ($ShowPopup) {
+    $args += "--show-popup"
 }
 & $cli @args
 '@
@@ -161,11 +169,11 @@ $manifest = [pscustomobject]@{
     dirty = $isDirty
     dirtyEntries = $dirtyLines
     includedFileCount = $fileEntries.Count
-    installCommand = ".\install.ps1 -StartTray"
+    installCommand = ".\install.ps1 -StartTray -RegisterStartup -ShowPopup"
     notes = @(
         "Package contents are copied from git-tracked product files only.",
         "Runtime data, local account config, OAuth secrets, token caches, Kiro scratch files, and mail exports are excluded.",
-        "The bundled install.ps1 installs the Windows helper and can start the compiled tray after user approval."
+        "The bundled install.ps1 installs the Windows helper, can start the compiled tray, and can register the tray in Windows Startup after user approval."
     )
     files = $fileEntries
 }
@@ -192,7 +200,7 @@ $sidecarManifest = [pscustomobject]@{
     archivePath = $zipPath
     archiveSha256 = $zipHash
     includedFileCount = $fileEntries.Count
-    installCommand = ".\install.ps1 -StartTray"
+    installCommand = ".\install.ps1 -StartTray -RegisterStartup -ShowPopup"
 }
 $sidecarManifestPath = Join-Path $resolvedOutputDir "$packageName.manifest.json"
 [System.IO.File]::WriteAllText($sidecarManifestPath, ($sidecarManifest | ConvertTo-Json -Depth 20), $utf8NoBom)
@@ -209,5 +217,5 @@ $sidecarManifestPath = Join-Path $resolvedOutputDir "$packageName.manifest.json"
     stagingRoot = $stagingRoot
     archiveSha256 = $zipHash
     includedFileCount = $fileEntries.Count
-    installCommand = ".\install.ps1 -StartTray"
+    installCommand = ".\install.ps1 -StartTray -RegisterStartup -ShowPopup"
 } | ConvertTo-Json -Depth 20

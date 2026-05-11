@@ -49,7 +49,7 @@ Agent actions:
 2. Read `docs/governance/WORKSPACE_STATE.md`.
 3. Detect OS, workspace path, Node availability, helper support, tray support, and git ignore protection.
 4. Run non-mail checks only: repository health, provider list, account config status, service health when available.
-5. On Windows, install the Windows helper if it is not installed. This initializes local status/config paths but does not read mail or start auto sync.
+5. On Windows, install the Windows helper if it is not installed. For regular use after user approval, start the tray, register it for current-user Windows startup, and show the status popup. This initializes local status/config paths but does not read mail or start auto sync.
 6. Do not connect accounts, discover credentials, scan mail exports, read mail, store bodies, save attachments, start auto sync, or mutate mail yet.
 
 User-facing response shape:
@@ -144,7 +144,7 @@ Trigger:
 
 Agent actions:
 
-1. On Windows, start or verify the compiled tray client.
+1. On Windows, start or verify the compiled tray client. For regular use after approval, register it in the current user's Windows Startup folder and show the status popup on launch.
 2. Do not start duplicate tray instances.
 3. Tell the user the tray owns the long-running local HTTP service.
 4. Do not dump endpoint catalogs or health JSON unless diagnostics are requested.

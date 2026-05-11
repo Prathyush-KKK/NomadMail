@@ -29,7 +29,7 @@ Setup:
   .\scripts\nomad-inbox.ps1 setup
   .\scripts\nomad-inbox.ps1 doctor
   .\scripts\nomad-inbox.ps1 config status
-  .\scripts\nomad-inbox.ps1 install windows-helper
+  .\scripts\nomad-inbox.ps1 install windows-helper --start-tray --register-startup --show-popup
   .\scripts\nomad-inbox.ps1 env status
 
 Discovery:
@@ -54,7 +54,7 @@ Background sync:
   .\scripts\nomad-inbox.ps1 service start --interval-seconds 300
   .\scripts\nomad-inbox.ps1 service status
   .\scripts\nomad-inbox.ps1 service stop
-  .\scripts\nomad-inbox.ps1 tray start
+  .\scripts\nomad-inbox.ps1 tray start --show-popup
   .\scripts\nomad-inbox.ps1 tray status
 
 Message navigation:
@@ -223,6 +223,7 @@ function Get-NomadInboxTrayStatus {
             dataDir = $helperStatus.dataDir
             helperPath = $helperStatus.helperPath
             trayExePath = $helperStatus.trayExePath
+            startup = $helperStatus.startup
         }
     } else {
         $null
@@ -266,6 +267,7 @@ function Get-NomadInboxTrayStatus {
         helperInstalled = Test-Path -LiteralPath $helperStatusPath
         helperStatusPath = $helperStatusPath
         helper = $helperSummary
+        startup = if ($null -ne $helperStatus -and $null -ne $helperStatus.startup) { $helperStatus.startup } else { $null }
         dataDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($dataDir)
         http = $httpStatus
         worker = if ($null -ne $serviceStatus) { $serviceStatus.worker } else { $null }
@@ -301,6 +303,8 @@ try {
             $installRoot = Get-NomadInboxOption $options "install-root" ""
             if (-not [string]::IsNullOrWhiteSpace($installRoot)) { $installerArgs["InstallRoot"] = $installRoot }
             if ($options.ContainsKey("start-tray")) { $installerArgs["StartTray"] = $true }
+            if ($options.ContainsKey("register-startup")) { $installerArgs["RegisterStartup"] = $true }
+            if ($options.ContainsKey("show-popup")) { $installerArgs["ShowPopupOnStartup"] = $true }
             if ($options.ContainsKey("skip-user-env")) { $installerArgs["SkipUserEnvironment"] = $true }
             & $installer @installerArgs
         }
@@ -430,6 +434,7 @@ try {
                     $launcherArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $trayLauncher)
                     $dataDir = Get-NomadInboxOption $options "data-dir" ""
                     if (-not [string]::IsNullOrWhiteSpace($dataDir)) { $launcherArgs += @("-DataDir", $dataDir) }
+                    if ($options.ContainsKey("show-popup")) { $launcherArgs += "-ShowOnStartup" }
                     $trayStartText = & powershell.exe @launcherArgs
                     if ([string]::IsNullOrWhiteSpace(($trayStartText | Out-String))) {
                         throw "Compiled tray launcher did not return a status."

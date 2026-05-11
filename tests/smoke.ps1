@@ -24,7 +24,7 @@ try {
 
     $installRoot = Join-Path $testRoot "agent-helper"
     $install = & $cli install windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $installRoot --skip-user-env | ConvertFrom-Json
-    if ($install.status -ne "ok" -or -not (Test-Path -LiteralPath $install.helperPath) -or -not (Test-Path -LiteralPath $install.statusPath)) {
+    if ($install.status -ne "ok" -or -not (Test-Path -LiteralPath $install.helperPath) -or -not (Test-Path -LiteralPath $install.statusPath) -or $install.startup.registered -ne $false) {
         throw "windows helper install failed"
     }
     if ($install.environment.registered -ne $false -or $install.environment.skipped -ne $true) {
@@ -42,7 +42,7 @@ try {
 
     $nodeInstallRoot = Join-Path $testRoot "agent-helper-node"
     $nodeInstall = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") install-windows-helper --data-dir $env:NOMADINBOX_DATA_DIR --install-root $nodeInstallRoot --skip-user-env | ConvertFrom-Json
-    if ($nodeInstall.status -ne "ok" -or -not (Test-Path -LiteralPath $nodeInstall.helperPath) -or -not (Test-Path -LiteralPath $nodeInstall.statusPath)) {
+    if ($nodeInstall.status -ne "ok" -or -not (Test-Path -LiteralPath $nodeInstall.helperPath) -or -not (Test-Path -LiteralPath $nodeInstall.statusPath) -or $nodeInstall.startup.registered -ne $false) {
         throw "node helper install command failed"
     }
 
@@ -243,7 +243,7 @@ This sample validates archive ingestion without using real mailbox exports.
     }
 
     $systemPrompt = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") system-prompt | ConvertFrom-Json
-    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*docs/runbooks/agent-user-flow.md*" -or $systemPrompt.text -notlike "*Your first response must show*" -or $systemPrompt.text -notlike "*Windows helper and tray status*" -or $systemPrompt.text -notlike "*runtime/agent-scratch*" -or $systemPrompt.text -notlike "*MCP stdio tools are launched by each calling agent*" -or $systemPrompt.text -notlike "*Do not dump endpoint lists*" -or $systemPrompt.text -notlike "*user's locale and time zone*" -or $systemPrompt.text -notlike "*latest email*" -or $systemPrompt.text -notlike "*Trash/delete requires double explicit approval*" -or $systemPrompt.text -notlike "*unread-outlook-2026-04-29-to-2026-05-06.md*") {
+    if ($systemPrompt.status -ne "ok" -or $systemPrompt.promptType -ne "system" -or $systemPrompt.text -notlike "*docs/runbooks/agent-user-flow.md*" -or $systemPrompt.text -notlike "*Your first response must show*" -or $systemPrompt.text -notlike "*Windows helper and tray status*" -or $systemPrompt.text -notlike "*runtime/agent-scratch*" -or $systemPrompt.text -notlike "*MCP stdio tools are launched by each calling agent*" -or $systemPrompt.text -notlike "*Do not dump endpoint lists*" -or $systemPrompt.text -notlike "*user's locale and time zone*" -or $systemPrompt.text -notlike "*latest email*" -or $systemPrompt.text -notlike "*Trash/delete requires double explicit approval*" -or $systemPrompt.text -notlike "*unread-outlook-2026-04-29-to-2026-05-06.md*" -or $systemPrompt.text -notlike "*--register-startup --show-popup*") {
         throw "startup system prompt failed"
     }
 

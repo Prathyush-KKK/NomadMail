@@ -74,6 +74,7 @@ services:
       - initialize-ignored-runtime-state
       - initialize-local-account-config
       - install-helper-launcher
+      - optionally-register-tray-startup-shortcut
       - publish-helper-status
     notes:
       - Windows-only.
@@ -132,6 +133,7 @@ services:
       - render-menu-from-cached-state
       - queue-sync-now-as-background-task
       - start-stop-background-sync-as-background-task
+      - optionally-open-status-popup-on-startup
       - show-sync-status-and-settings
     notes:
       - PowerShell remains the launcher/build wrapper and service layer.

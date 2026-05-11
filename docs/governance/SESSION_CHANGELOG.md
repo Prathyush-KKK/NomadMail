@@ -1,5 +1,14 @@
 # Session Architecture Changelog
 
+## 2026-05-11 - Windows startup tray popup and README onboarding
+
+Summary:
+
+- Added approved Windows helper install flow for current-user startup shortcut and tray popup on launch, simplified README onboarding, widened NomadMail health CLI timeout, and validated tray, HTTP, MCP, smoke, agent-flow, and new-clone paths.
+
+Session note:
+
+- docs/governance/session-updates/20260511-233538-windows-startup-tray-popup-and-readme-onboarding.md
 ## 2026-05-11 - Assigned-agent automation events
 
 Summary:

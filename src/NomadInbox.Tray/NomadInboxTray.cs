@@ -59,6 +59,7 @@ namespace NomadInbox.Tray
         public string Host { get; private set; }
         public int Port { get; private set; }
         public string IconPath { get; private set; }
+        public bool ShowOnStartup { get; private set; }
 
         public string BaseUrl
         {
@@ -71,6 +72,7 @@ namespace NomadInbox.Tray
             var dataDir = "";
             var host = "127.0.0.1";
             var port = 8791;
+            var showOnStartup = false;
 
             for (var i = 0; i < args.Length; i++)
             {
@@ -97,6 +99,10 @@ namespace NomadInbox.Tray
                     if (port <= 0) port = 8791;
                     i++;
                 }
+                else if (key == "--show-on-startup")
+                {
+                    showOnStartup = true;
+                }
             }
 
             repoRoot = Path.GetFullPath(repoRoot);
@@ -114,7 +120,8 @@ namespace NomadInbox.Tray
                 DataDir = Path.GetFullPath(dataDir),
                 Host = host,
                 Port = port,
-                IconPath = Path.Combine(repoRoot, "assets", "nomadinbox-tray.ico")
+                IconPath = Path.Combine(repoRoot, "assets", "nomadinbox-tray.ico"),
+                ShowOnStartup = showOnStartup
             };
         }
     }
@@ -126,6 +133,7 @@ namespace NomadInbox.Tray
         private readonly NotifyIcon notify;
         private readonly ContextMenuStrip menu;
         private readonly System.Windows.Forms.Timer refreshTimer;
+        private System.Windows.Forms.Timer startupPopupTimer;
         private readonly JavaScriptSerializer serializer;
         private readonly object stateLock = new object();
         private readonly Icon appIcon;
@@ -190,6 +198,10 @@ namespace NomadInbox.Tray
             LoadCachedStatusAsync();
             BeginRefresh("startup");
             refreshTimer.Start();
+            if (options.ShowOnStartup)
+            {
+                ScheduleStartupPopup();
+            }
             notify.ShowBalloonTip(2500, "NomadInbox", "NomadInbox is running. Click the tray icon for Refresh, Sync now, auto sync, and status.", ToolTipIcon.Info);
             Application.Run(new ApplicationContext());
         }
@@ -200,6 +212,12 @@ namespace NomadInbox.Tray
             disposed = true;
             refreshTimer.Stop();
             refreshTimer.Dispose();
+            if (startupPopupTimer != null)
+            {
+                startupPopupTimer.Stop();
+                startupPopupTimer.Dispose();
+                startupPopupTimer = null;
+            }
             if (statusPopup != null && !statusPopup.IsDisposed) statusPopup.Close();
             if (settingsForm != null && !settingsForm.IsDisposed) settingsForm.Close();
             StopHttpServiceIfOwned();
@@ -208,6 +226,19 @@ namespace NomadInbox.Tray
             if (ownsAppIcon) appIcon.Dispose();
             menu.Dispose();
             invoker.Dispose();
+        }
+
+        private void ScheduleStartupPopup()
+        {
+            startupPopupTimer = new System.Windows.Forms.Timer { Interval = 900 };
+            startupPopupTimer.Tick += (sender, args) =>
+            {
+                startupPopupTimer.Stop();
+                startupPopupTimer.Dispose();
+                startupPopupTimer = null;
+                ShowStatusPopup();
+            };
+            startupPopupTimer.Start();
         }
 
         private void LoadCachedStatusAsync()

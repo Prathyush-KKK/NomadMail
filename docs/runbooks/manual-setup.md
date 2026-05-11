@@ -29,7 +29,7 @@ Expected result:
 On Windows, install the local PowerShell helper before connecting accounts:
 
 ```powershell
-.\scripts\nomad-inbox.ps1 install windows-helper
+.\scripts\nomad-inbox.ps1 install windows-helper --start-tray --register-startup --show-popup
 ```
 
 Expected result:
@@ -37,10 +37,11 @@ Expected result:
 - ignored runtime files are initialized
 - `config\accounts.json` is created if missing
 - a local helper launcher is written under `%LOCALAPPDATA%\NomadInbox\agent-helper`
+- the compiled tray starts now, opens the status popup, and is registered in the current user's Windows Startup folder
 - the helper status file records the data directory, account config path, sync status path, and message store paths
 - user environment variables are registered for future agent sessions, including `NOMADINBOX_HOME` and `NOMADMAIL_HANDOFF_COMMAND`
 
-The helper does not connect accounts, read mailbox data, or start auto sync by itself.
+The helper does not connect accounts, read mailbox data, or start auto sync by itself. Startup registration only starts the local tray and NomadMail service surface.
 
 Verify cross-chat discovery:
 

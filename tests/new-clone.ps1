@@ -317,10 +317,12 @@ This validates that a brand new clone can import and search read-only archive co
             Assert-NewClone (Test-Path -LiteralPath $install.helperPath) "helper launcher missing"
             Assert-NewClone (Test-Path -LiteralPath $install.statusPath) "helper status missing"
             Assert-NewClone ($install.environment.skipped -eq $true) "test helper install should skip user environment registration"
+            Assert-NewClone ($install.startup.registered -eq $false) "temporary helper install should not register startup"
             [pscustomobject]@{
                 status = $install.status
                 platform = $install.platform
                 trayStarted = $install.trayStarted
+                startupRegistered = $install.startup.registered
                 userEnvironmentSkipped = $install.environment.skipped
             }
         }

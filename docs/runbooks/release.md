@@ -76,21 +76,23 @@ Excluded:
 
 ## User Install Flow
 
-After unzipping the package, install the Windows helper and optionally start the
-tray:
+After unzipping the package, install the Windows helper, start the tray, register
+current-user startup, and open the status popup:
 
 ```powershell
-.\install.ps1 -StartTray
+.\install.ps1 -StartTray -RegisterStartup -ShowPopup
 ```
 
 The installer delegates to:
 
 ```powershell
-.\scripts\nomad-inbox.ps1 install windows-helper --start-tray
+.\scripts\nomad-inbox.ps1 install windows-helper --start-tray --register-startup --show-popup
 ```
 
 The helper writes to `%LOCALAPPDATA%\NomadInbox\agent-helper` by default and
-records its local status in `status.json`.
+records its local status in `status.json`. Startup registration creates a
+current-user Startup shortcut; it starts the tray service surface only and does
+not enable mailbox auto sync.
 
 ## Verify After Install
 
@@ -102,6 +104,7 @@ records its local status in `status.json`.
 Expected result:
 
 - `tray` is `running` after `-StartTray`
+- `startup.registered` is `true` after `-RegisterStartup`
 - local HTTP health is `ok` when the tray-owned service is up
 - runtime data paths point to the user's ignored local data directory
 

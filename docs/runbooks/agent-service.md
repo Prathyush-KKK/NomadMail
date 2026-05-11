@@ -146,7 +146,7 @@ When an agent opens this repository as a user workspace:
 
 - Load the built-in startup system prompt.
 - Detect the operating system first.
-- If it is Windows, run `nomadmail_install_windows_helper`, `node .\service\nomadmail-service.mjs install-windows-helper`, or `.\scripts\nomad-inbox.ps1 install windows-helper` before connecting accounts, report tray availability, and ask before starting the tray controller. Starting the tray keeps local HTTP tools available but must not enable auto sync by itself.
+- If it is Windows, run `nomadmail_install_windows_helper`, `node .\service\nomadmail-service.mjs install-windows-helper`, or `.\scripts\nomad-inbox.ps1 install windows-helper --start-tray --register-startup --show-popup` before connecting accounts. After approval, start the compiled tray, register current-user startup, show the popup, and report tray availability. Starting the tray keeps local HTTP tools available but must not enable auto sync by itself.
 - If it is not Windows, do not install the Windows helper, start the tray, or offer Outlook Desktop COM sync. Use the MCP server for platform-independent local context tools and report what provider sync runtime is missing.
 - Do not discover credentials, mailbox profiles, exports, or connected accounts until the user approves the exact source and scope.
 - For complex PowerShell diagnostics, create temporary scripts only under ignored scratch locations such as `runtime\agent-scratch\` or the OS temp directory. Do not place ad hoc diagnostic scripts in `scripts\`, `src\`, `service\`, `docs\`, or the repository root. Keep tracked scripts for durable sync/service behavior.

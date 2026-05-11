@@ -73,7 +73,7 @@ function ConvertTo-NomadInboxOptions {
         $token = $Tokens[$i]
         if (-not $token.StartsWith("--")) { throw "Unexpected argument: $token" }
         $key = $token.Substring(2)
-        if ($key -in @("include-bodies", "dry-run", "latest-in-thread", "start-tray", "skip-user-env", "open-draft", "confirm-action", "confirm-send", "confirm-delete")) {
+        if ($key -in @("include-bodies", "dry-run", "latest-in-thread", "start-tray", "register-startup", "show-popup", "skip-user-env", "open-draft", "confirm-action", "confirm-send", "confirm-delete")) {
             $options[$key] = "true"
             continue
         }
