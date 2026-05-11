@@ -234,9 +234,9 @@ namespace NomadInbox.Tray
                 try
                 {
                     await EnsureHttpServiceAsync();
-                    var serviceTask = RequestJsonAsync("GET", "/service/status", null, 3500);
-                    var accountsTask = RequestJsonAsync("GET", "/accounts", null, 3500);
-                    var backupTask = RequestJsonAsync("GET", "/backup/status", null, 3500);
+                    var serviceTask = RequestJsonAsync("GET", "/service/status", null, 15000);
+                    var accountsTask = RequestJsonAsync("GET", "/accounts", null, 15000);
+                    var backupTask = RequestJsonAsync("GET", "/backup/status", null, 15000);
                     await Task.WhenAll(serviceTask, accountsTask, backupTask);
                     next = BuildState(serviceTask.Result, accountsTask.Result, backupTask.Result, true, reason);
                 }
@@ -513,9 +513,9 @@ namespace NomadInbox.Tray
                 }
             }
 
-            for (var i = 0; i < 12; i++)
+            for (var i = 0; i < 30; i++)
             {
-                await Task.Delay(250);
+                await Task.Delay(500);
                 if (await IsHttpRunningAsync()) return;
             }
         }
@@ -524,7 +524,7 @@ namespace NomadInbox.Tray
         {
             try
             {
-                var result = await RequestJsonAsync("GET", "/workspace-state", null, 1200);
+                var result = await RequestJsonAsync("GET", "/workspace-state", null, 5000);
                 return GetString(result, "service", "") == "NomadMail";
             }
             catch
@@ -956,7 +956,6 @@ namespace NomadInbox.Tray
         private readonly Action openRuntime;
         private readonly Label subtitle;
         private readonly Label updatedLabel;
-        private readonly Label httpPill;
         private readonly Label syncPill;
         private readonly Label liveCountLabel;
         private readonly Label archiveCountLabel;
@@ -978,12 +977,12 @@ namespace NomadInbox.Tray
 
             Text = "NomadInbox";
             Icon = icon;
-            ClientSize = new Size(432, 520);
-            MinimumSize = new Size(432, 520);
-            MaximumSize = new Size(432, 520);
+            ClientSize = new Size(432, 492);
+            MinimumSize = new Size(432, 492);
+            MaximumSize = new Size(432, 492);
             ShowInTaskbar = false;
             TopMost = true;
-            FormBorderStyle = FormBorderStyle.FixedSingle;
+            FormBorderStyle = FormBorderStyle.None;
             MaximizeBox = false;
             MinimizeBox = false;
             Font = new Font("Segoe UI", 9F);
@@ -991,73 +990,65 @@ namespace NomadInbox.Tray
             Deactivate += (sender, args) => Hide();
             tips = new ToolTip { AutomaticDelay = 350, ReshowDelay = 100, ShowAlways = true };
 
-            var headerIcon = new PictureBox { Left = 18, Top = 16, Width = 28, Height = 28, SizeMode = PictureBoxSizeMode.StretchImage, Image = icon.ToBitmap() };
-            var title = new Label { Text = "NomadInbox", Left = 54, Top = 12, Width = 190, Height = 24, Font = new Font("Segoe UI", 13F, FontStyle.Bold), ForeColor = Palette.Text };
-            subtitle = new Label { Text = "Loading status.", Left = 54, Top = 37, Width = 262, Height = 20, ForeColor = Palette.Muted };
-            updatedLabel = new Label { Text = "", Left = 316, Top = 14, Width = 96, Height = 18, TextAlign = ContentAlignment.TopRight, ForeColor = Palette.Muted, Font = new Font("Segoe UI", 8F) };
-            var closeButton = NewIconButton("", IconFactory.Close(Palette.Muted), 388, 34);
+            var headerIcon = new PictureBox { Left = 18, Top = 16, Width = 30, Height = 30, SizeMode = PictureBoxSizeMode.StretchImage, Image = icon.ToBitmap() };
+            var title = new Label { Text = "NomadInbox", Left = 58, Top = 12, Width = 190, Height = 24, Font = new Font("Segoe UI", 13F, FontStyle.Bold), ForeColor = Palette.Text };
+            subtitle = new Label { Text = "Loading status.", Left = 58, Top = 37, Width = 258, Height = 20, ForeColor = Palette.Muted };
+            updatedLabel = new Label { Text = "", Left = 300, Top = 14, Width = 112, Height = 18, TextAlign = ContentAlignment.TopRight, ForeColor = Palette.Muted, Font = new Font("Segoe UI", 8F) };
+            var closeButton = NewIconButton("", IconFactory.Close(Palette.Muted), 388, 36);
             closeButton.Size = new Size(28, 28);
             closeButton.Click += (sender, args) => Hide();
 
-            httpPill = NewPill("HTTP");
-            httpPill.Left = 18;
-            httpPill.Top = 72;
             syncPill = NewPill("Auto sync");
-            syncPill.Left = 128;
+            syncPill.Left = 18;
             syncPill.Top = 72;
+            syncPill.Width = 130;
 
-            refreshButton = NewIconButton("Refresh", IconFactory.Refresh(Palette.Accent), 238, 68);
-            refreshButton.Click += (sender, args) => refresh("popup");
-            tips.SetToolTip(refreshButton, "Refresh status from the local NomadMail service.");
-            syncButton = NewIconButton("Sync now", IconFactory.Sync(Palette.Accent), 18, 112);
-            syncButton.Width = 128;
+            syncButton = NewIconButton("Sync now", IconFactory.Sync(Color.White), 18, 108);
+            syncButton.Width = 96;
+            syncButton.BackColor = Palette.Accent;
+            syncButton.ForeColor = Color.White;
+            syncButton.FlatAppearance.BorderColor = Palette.Accent;
             syncButton.Click += (sender, args) => syncNow();
             tips.SetToolTip(syncButton, "Run one sync cycle for enabled accounts.");
-            autoButton = NewIconButton("Auto sync", IconFactory.Power(Palette.Accent), 154, 112);
-            autoButton.Width = 128;
+            refreshButton = NewIconButton("Refresh", IconFactory.Refresh(Palette.Accent), 118, 108);
+            refreshButton.Width = 96;
+            refreshButton.Click += (sender, args) => refresh("popup");
+            tips.SetToolTip(refreshButton, "Refresh status from the local NomadMail service.");
+            autoButton = NewIconButton("Auto", IconFactory.Power(Palette.Accent), 218, 108);
+            autoButton.Width = 96;
             autoButton.Click += (sender, args) => toggleAutoSync();
             tips.SetToolTip(autoButton, "Turn background sync on or off.");
-            var settingsButton = NewIconButton("Settings", IconFactory.Settings(Palette.Accent), 290, 112);
-            settingsButton.Width = 124;
+            var settingsButton = NewIconButton("Settings", IconFactory.Settings(Palette.Accent), 318, 108);
+            settingsButton.Width = 96;
             settingsButton.Click += (sender, args) => openSettings();
             tips.SetToolTip(settingsButton, "Open diagnostics and runtime details.");
 
-            var liveCard = NewMetricCard(18, 160, "Live messages");
+            var liveCard = NewMetricCard(18, 158, "Live messages");
             liveCountLabel = (Label)liveCard.Controls["value"];
-            var archiveCard = NewMetricCard(154, 160, "Archive");
+            var archiveCard = NewMetricCard(154, 158, "Archive");
             archiveCountLabel = (Label)archiveCard.Controls["value"];
-            var syncCard = NewMetricCard(290, 160, "Last sync");
+            var syncCard = NewMetricCard(290, 158, "Last sync");
             lastSyncLabel = (Label)syncCard.Controls["value"];
 
-            var accountTitle = new Label { Text = "Accounts", Left = 18, Top = 250, Width = 170, Height = 22, Font = new Font("Segoe UI", 10F, FontStyle.Bold), ForeColor = Palette.Text };
-            nextSyncLabel = new Label { Text = "", Left = 188, Top = 252, Width = 226, Height = 20, TextAlign = ContentAlignment.TopRight, ForeColor = Palette.Muted, Font = new Font("Segoe UI", 8.5F) };
-            accountsPanel = new FlowLayoutPanel { Left = 18, Top = 278, Width = 396, Height = 152, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Palette.Surface };
+            var accountTitle = new Label { Text = "Accounts", Left = 18, Top = 244, Width = 170, Height = 22, Font = new Font("Segoe UI", 10F, FontStyle.Bold), ForeColor = Palette.Text };
+            nextSyncLabel = new Label { Text = "", Left = 188, Top = 246, Width = 226, Height = 20, TextAlign = ContentAlignment.TopRight, ForeColor = Palette.Muted, Font = new Font("Segoe UI", 8.5F) };
+            accountsPanel = new FlowLayoutPanel { Left = 18, Top = 272, Width = 396, Height = 146, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Palette.Surface };
 
             var note = new Label
             {
                 Left = 18,
-                Top = 438,
+                Top = 426,
                 Width = 396,
-                Height = 36,
+                Height = 44,
                 ForeColor = Palette.Muted,
                 Text = "Ask your agent to connect new accounts. The tray will not discover credentials or mailbox data."
             };
-
-            var folderButton = NewIconButton("Runtime", IconFactory.Folder(Palette.Accent), 18, 482);
-            folderButton.Width = 112;
-            folderButton.Click += (sender, args) => openRuntime();
-            tips.SetToolTip(folderButton, "Open the local runtime data folder.");
-            var diagnosticsButton = NewIconButton("Diagnostics", IconFactory.Settings(Palette.Muted), 138, 482);
-            diagnosticsButton.Width = 128;
-            diagnosticsButton.Click += (sender, args) => openSettings();
-            tips.SetToolTip(diagnosticsButton, "Open full settings and diagnostic status.");
 
             Controls.Add(headerIcon);
             Controls.Add(title);
             Controls.Add(subtitle);
             Controls.Add(updatedLabel);
             Controls.Add(closeButton);
-            Controls.Add(httpPill);
             Controls.Add(syncPill);
             Controls.Add(refreshButton);
             Controls.Add(syncButton);
@@ -1070,15 +1061,12 @@ namespace NomadInbox.Tray
             Controls.Add(nextSyncLabel);
             Controls.Add(accountsPanel);
             Controls.Add(note);
-            Controls.Add(folderButton);
-            Controls.Add(diagnosticsButton);
         }
 
         public void Render(TrayState state, bool refreshInFlight)
         {
             subtitle.Text = refreshInFlight ? "Refreshing status..." : EmptyAs(state.LastMessage, "Status ready.");
             updatedLabel.Text = state.LastUpdatedAt == DateTime.MinValue ? "" : "Updated " + state.LastUpdatedAt.ToString("t", CultureInfo.CurrentCulture);
-            SetPill(httpPill, state.HttpStatus == "running" ? "HTTP on" : "HTTP off", state.HttpStatus == "running");
             SetPill(syncPill, state.Worker == "running" ? "Auto sync on" : "Auto sync off", state.Worker == "running");
 
             refreshButton.Enabled = !refreshInFlight;
@@ -1120,15 +1108,15 @@ namespace NomadInbox.Tray
                 Width = 128,
                 Height = 34,
                 FlatStyle = FlatStyle.Flat,
-                BackColor = Color.White,
+                BackColor = Palette.Card,
                 ForeColor = Palette.Text,
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 Padding = string.IsNullOrWhiteSpace(text) ? Padding.Empty : new Padding(8, 0, 8, 0),
                 UseVisualStyleBackColor = false
             };
             button.FlatAppearance.BorderColor = Palette.Border;
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(239, 246, 255);
-            button.FlatAppearance.MouseDownBackColor = Color.FromArgb(219, 234, 254);
+            button.FlatAppearance.MouseOverBackColor = Palette.CardHover;
+            button.FlatAppearance.MouseDownBackColor = Palette.CardPressed;
             return button;
         }
 
@@ -1146,7 +1134,7 @@ namespace NomadInbox.Tray
 
         private static Panel NewMetricCard(int left, int top, string labelText)
         {
-            var panel = new Panel { Left = left, Top = top, Width = 124, Height = 72, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            var panel = new Panel { Left = left, Top = top, Width = 124, Height = 72, BackColor = Palette.Card, BorderStyle = BorderStyle.FixedSingle };
             var label = new Label { Text = labelText, Left = 10, Top = 8, Width = 100, Height = 18, ForeColor = Palette.Muted, Font = new Font("Segoe UI", 8.5F) };
             var value = new Label { Name = "value", Text = "-", Left = 10, Top = 30, Width = 104, Height = 28, ForeColor = Palette.Text, Font = new Font("Segoe UI", 14F, FontStyle.Bold) };
             panel.Controls.Add(label);
@@ -1156,7 +1144,7 @@ namespace NomadInbox.Tray
 
         private static Control NewEmptyAccountRow()
         {
-            var row = new Panel { Width = 372, Height = 58, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 8) };
+            var row = new Panel { Width = 372, Height = 58, BackColor = Palette.Card, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 8) };
             row.Controls.Add(new Label { Text = "No accounts connected", Left = 12, Top = 8, Width = 250, Height = 20, ForeColor = Palette.Text, Font = new Font("Segoe UI", 9F, FontStyle.Bold) });
             row.Controls.Add(new Label { Text = "Ask your agent to connect Outlook Desktop, Gmail, or Graph.", Left = 12, Top = 30, Width = 342, Height = 18, ForeColor = Palette.Muted, Font = new Font("Segoe UI", 8.5F) });
             return row;
@@ -1164,7 +1152,7 @@ namespace NomadInbox.Tray
 
         private static Control NewAccountRow(AccountRow account)
         {
-            var row = new Panel { Width = 372, Height = 64, BackColor = Color.White, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 8) };
+            var row = new Panel { Width = 372, Height = 64, BackColor = Palette.Card, BorderStyle = BorderStyle.FixedSingle, Margin = new Padding(0, 0, 0, 8) };
             var statusColor = StatusColor(account);
             var dot = new Label { Left = 12, Top = 18, Width = 12, Height = 12, BackColor = statusColor };
             var name = new Label { Text = Clamp(account.Label, 42), Left = 32, Top = 8, Width = 242, Height = 20, ForeColor = Palette.Text, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
@@ -1195,8 +1183,8 @@ namespace NomadInbox.Tray
         private static void SetPill(Label label, string text, bool ok)
         {
             label.Text = text;
-            label.BackColor = ok ? Color.FromArgb(220, 252, 231) : Color.FromArgb(254, 243, 199);
-            label.ForeColor = ok ? Color.FromArgb(22, 101, 52) : Color.FromArgb(146, 64, 14);
+            label.BackColor = ok ? Color.FromArgb(20, 83, 45) : Color.FromArgb(120, 53, 15);
+            label.ForeColor = ok ? Color.FromArgb(187, 247, 208) : Color.FromArgb(254, 215, 170);
         }
 
         private static string ProviderLabel(string provider)
@@ -1221,14 +1209,17 @@ namespace NomadInbox.Tray
 
     internal static class Palette
     {
-        public static readonly Color Surface = Color.FromArgb(248, 250, 252);
-        public static readonly Color Text = Color.FromArgb(15, 23, 42);
-        public static readonly Color Muted = Color.FromArgb(100, 116, 139);
-        public static readonly Color Border = Color.FromArgb(203, 213, 225);
-        public static readonly Color Accent = Color.FromArgb(37, 99, 235);
-        public static readonly Color Success = Color.FromArgb(22, 163, 74);
-        public static readonly Color Warning = Color.FromArgb(217, 119, 6);
-        public static readonly Color Error = Color.FromArgb(220, 38, 38);
+        public static readonly Color Surface = Color.FromArgb(15, 23, 42);
+        public static readonly Color Card = Color.FromArgb(30, 41, 59);
+        public static readonly Color CardHover = Color.FromArgb(51, 65, 85);
+        public static readonly Color CardPressed = Color.FromArgb(71, 85, 105);
+        public static readonly Color Text = Color.FromArgb(241, 245, 249);
+        public static readonly Color Muted = Color.FromArgb(148, 163, 184);
+        public static readonly Color Border = Color.FromArgb(51, 65, 85);
+        public static readonly Color Accent = Color.FromArgb(56, 189, 248);
+        public static readonly Color Success = Color.FromArgb(34, 197, 94);
+        public static readonly Color Warning = Color.FromArgb(245, 158, 11);
+        public static readonly Color Error = Color.FromArgb(248, 113, 113);
     }
 
     internal static class IconFactory

@@ -53,7 +53,7 @@ Agents should also read [WORKSPACE_STATE.md](docs/governance/WORKSPACE_STATE.md)
 
 The definitive user-facing setup and daily-mail query flow is documented in [Agent User Flow](docs/runbooks/agent-user-flow.md) and is exposed through `nomadmail_get_agent_user_flow` / HTTP `/agent-user-flow`.
 
-For a different chat session or another agent, use [nomadmail-cross-chat-handoff.md](prompts/nomadmail-cross-chat-handoff.md), `nomadmail_get_cross_chat_handoff`, or HTTP `/cross-chat-handoff`. This is the repo-owned handoff prompt for reconnecting another chat to the same local workspace, tray-owned HTTP service, MCP server, and ignored runtime store.
+For a different chat session or another agent, use [nomadmail-cross-chat-handoff.md](prompts/nomadmail-cross-chat-handoff.md), `nomadmail_get_cross_chat_handoff`, or HTTP `/cross-chat-handoff`. This is the repo-owned handoff prompt for reconnecting another chat to the same local workspace, tray-owned HTTP service, MCP server, and ignored runtime store. The connection order is MCP first, tray-owned HTTP second, and direct repo CLI third; if a chat cannot see `nomadmail_*` MCP tools, it should fall back to HTTP or CLI rather than treating that as a service failure.
 
 If the other agent only gets the workspace path, it should read [AGENTS.md](AGENTS.md) first. If it does not get the path, it can try `NOMADINBOX_HOME`:
 
@@ -91,9 +91,11 @@ What the agent can do with NomadInbox:
 - sync a small approved mailbox scope into the local ignored store
 - import approved email backups as read-only context
 - search local mail context and fetch cited messages
+- open a selected Outlook Desktop message or newest synced item in a conversation through the preserved Outlook EntryID
 - show mail action choices after discovery, including draft reply, draft new mail, mark/flag/move/archive, and trash/delete only when the message is live and actionable
 - report sync status, backup counts, worker state, and storage location
 - start the tray app and turn on auto sync after accounts are connected
+- queue local assigned-agent automation events for Codex, Claude Code, Kiro, or another MCP-capable agent to review and acknowledge
 - stage data in another local folder with `NOMADINBOX_DATA_DIR`
 - expose the same local context tools to other agent chats through the platform-independent NomadMail MCP server
 
@@ -131,7 +133,7 @@ NomadMail exposes NomadInbox to agents through:
 - local HTTP on `127.0.0.1`
 - the underlying PowerShell CLI
 
-The service supports provider/account discovery, one-shot sync, local message search, message lookup, UI-ready message action guidance, backup status, service status, background worker start/stop, agent guidance, and read-only archive import.
+The service supports provider/account discovery, one-shot sync, local message search, message lookup, UI-ready message action guidance, approved Outlook Desktop action execution, backup status, service status, background worker start/stop, agent guidance, and read-only archive import.
 
 Provider data is stored in two layers. `data\messages.jsonl` is the canonical normalized message view for agents and UI, while `data\provider-raw.jsonl` stores provider-specific snapshots keyed back to the canonical message. Account settings control whether raw provider data, bodies, attachment metadata, and attachment bytes are captured; attachment bytes stay off by default.
 
@@ -140,6 +142,10 @@ Time handling is locale-aware. Set `NOMADINBOX_USER_CULTURE` or `NOMADINBOX_USER
 Latest-email questions are freshness-gated. When a user asks for the latest email, newest message, recent mail, or latest email content, agents must run one request-scoped live sync against already configured/enabled accounts before answering. If sync cannot complete, the agent must say it cannot confirm the latest email instead of treating stale local state as definite.
 
 After finding a live email, agents should offer a short action menu instead of stopping at the summary. Replies, forwards, and new mail must be drafted first, then sent only after approval of the exact draft. Trash/delete requires two explicit approvals. Actions may still fail when provider permissions or local runtime access are missing, such as read-only Gmail/Graph scopes or Outlook Desktop COM not being reachable.
+
+If the user asks to go to a specific Outlook Desktop thread, agents should use `nomadmail_open_message` or HTTP `POST /messages/open` with the selected message id or `conversationId`. NomadInbox resolves the locally stored Outlook EntryID and opens the item in Outlook Desktop. Search terms are only the fallback when the synced provider-native id is missing or stale.
+
+Outlook Desktop live messages also support executable actions through `nomadmail_execute_message_action`, HTTP `POST /messages/action`, or `.\scripts\nomad-inbox.ps1 message action`. Supported actions are draft reply, draft reply all, draft forward, draft new mail, send approved draft, mark read/unread, flag/unflag, move, archive, save attachment, and trash/delete. Drafts are saved first and are not sent automatically. Send requires `confirmSend`; mark/flag/move/archive/save attachment require `confirmAction`; trash/delete requires both `confirmDelete` and the returned `confirmFinal` phrase. The `delete` action moves to Deleted Items; permanent delete is not a default NomadInbox operation.
 
 Agents should call `nomadmail_get_agent_guide` or HTTP `/agent-guide` before syncing mail or parsing email backups for another repository.
 
@@ -154,6 +160,10 @@ Agents may create temporary diagnostic scripts for complex local checks only und
 For broad email reports, generated markdown, HTML, or JSON files should include the mail source and date range in the folder or filename. Use sortable, readable names such as `unread-outlook-2026-04-29-to-2026-05-06.md`, `unread-outlook-week-of-2026-05-06-index.md`, or `gmail-takeout-2025.md`; avoid vague names such as `unread-outlook-week.md` once the range contains many messages.
 
 The MCP server is a Node.js service intended to start on any OS, including direct launch with `node service/nomadmail-service.mjs mcp`. Windows agents should install the PowerShell helper for sync/account tracking. Non-Windows agents should keep using MCP for local JSONL context tools and return a clear unsupported-runtime response for Windows-only helper, tray, and Outlook Desktop operations. The Windows tray owns the long-running local HTTP service; MCP stdio remains client-launched.
+
+Assigned-agent automation is pull-based by default. NomadInbox can create bounded local review events in ignored `data\agent-events.jsonl`; Codex, Claude Code, Kiro, or another assigned agent can consume them through `nomadmail_list_agent_events`, inspect referenced messages through normal NomadMail tools, and call `nomadmail_ack_agent_event` after handling. Use `nomadmail_run_agent_automation_cycle` to turn newly synced live messages into pending events. These events are local prompts to review mail; they are not approval to fetch more content, send, delete, move, archive, mark, or save attachments.
+
+For Codex setup and verification, see [Codex Automation](docs/runbooks/codex-automation.md).
 
 ## Release Packaging
 

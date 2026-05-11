@@ -34,7 +34,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment"]
+        "enum": ["openInClient", "reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment"]
       }
     },
     "sourceType": { "type": ["string", "null"], "enum": ["live-sync", "archive-import", null] },

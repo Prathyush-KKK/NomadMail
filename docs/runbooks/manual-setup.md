@@ -251,6 +251,27 @@ Invoke-RestMethod "http://127.0.0.1:8791/messages?query=test&limit=5"
 Invoke-RestMethod -Method Post http://127.0.0.1:8791/sync/once -Body '{"accountId":"desktop-outlook"}' -ContentType 'application/json'
 ```
 
+## Use Assigned-Agent Automation
+
+NomadInbox can queue local review events for an assigned agent such as Codex.
+The events are stored in ignored `data\agent-events.jsonl` and are not approval
+to mutate mail.
+
+Create events from already synced live messages:
+
+```powershell
+node .\service\nomadmail-service.mjs agent-automation-cycle --assigned-agent codex --limit 10
+```
+
+List pending events:
+
+```powershell
+node .\service\nomadmail-service.mjs agent-events --assigned-agent codex --status pending
+```
+
+When Codex is configured with the NomadMail MCP server, it can call
+`nomadmail_list_agent_events` directly. See [Codex Automation](codex-automation.md).
+
 ## Validate The Repository
 
 ```powershell

@@ -133,6 +133,9 @@ This archive-only message validates the daily mail query path, read-only action 
     $tools = & node $service tools | ConvertFrom-Json
     Assert-Flow ((@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_agent_user_flow" }).Count) -eq 1) "agent user flow tool is missing"
     Assert-Flow ((@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_cross_chat_handoff" }).Count) -eq 1) "cross-chat handoff tool is missing"
+    Assert-Flow ((@($tools.tools | Where-Object { $_.name -eq "nomadmail_execute_message_action" }).Count) -eq 1) "execute message action tool is missing"
+    Assert-Flow ((@($tools.tools | Where-Object { $_.name -eq "nomadmail_run_agent_automation_cycle" }).Count) -eq 1) "agent automation cycle tool is missing"
+    Assert-Flow ((@($tools.tools | Where-Object { $_.name -eq "nomadmail_list_agent_events" }).Count) -eq 1) "agent event listing tool is missing"
 
     $flowCli = & node $service agent-user-flow | ConvertFrom-Json
     Assert-Flow ($flowCli.status -eq "ok" -and $flowCli.text -like "*Flow 1: First Prompt*" -and $flowCli.text -like "*Flow 5: Daily Mail Query Menu*") "agent user flow CLI output is incomplete"
@@ -150,8 +153,8 @@ This archive-only message validates the daily mail query path, read-only action 
     Assert-Flow ($flowCli.text -like "*NomadMail is running from the NomadInbox system tray*" -and $flowCli.text -like "*Auto sync is still off until you enable it*") "service/tray output is missing compact status wording"
     Add-Scenario $scenarios "service and tray setup" "Tell the user NomadMail is available from the tray; do not dump endpoints or raw JSON."
 
-    Assert-Flow ($flowCli.text -like "*Show my latest email with content*" -and $flowCli.text -like "*Summarize unread mail from today*" -and $flowCli.text -like "*Find mail that needs my action*" -and $flowCli.text -like "*Draft a reply or new email*") "daily mail query menu is incomplete"
-    Add-Scenario $scenarios "daily mail query choices" "Present latest, unread today/week, needs-action, search-by-topic/sender/date/attachment, low-priority, and draft options."
+    Assert-Flow ($flowCli.text -like "*Show my latest email with content*" -and $flowCli.text -like "*Summarize unread mail from today*" -and $flowCli.text -like "*Find mail that needs my action*" -and $flowCli.text -like "*Draft a reply or new email*" -and $flowCli.text -like "*Open a selected Outlook Desktop message or thread in Outlook*") "daily mail query menu is incomplete"
+    Add-Scenario $scenarios "daily mail query choices" "Present latest, unread today/week, needs-action, search-by-topic/sender/date/attachment, low-priority, draft, and Outlook Desktop open options."
 
     Assert-Flow ($flowCli.text -like "*run one request-scoped live sync*" -and $flowCli.text -like "*the latest email cannot be confirmed*") "latest-email freshness output is missing"
     Add-Scenario $scenarios "latest email freshness" "Sync first for enabled live accounts; if sync fails, say the latest email cannot be confirmed."
@@ -159,8 +162,8 @@ This archive-only message validates the daily mail query path, read-only action 
     Assert-Flow ($flowCli.text -like "*runtime/agent-scratch*" -and $flowCli.text -like "*source and date range*" -and $flowCli.text -like "*Which group should I open first?*") "broad range report output is missing"
     Add-Scenario $scenarios "broad daily digest or range report" "Resolve the absolute date range, group results, save a range-aware report, and ask which group to open."
 
-    Assert-Flow ($flowCli.text -like "*Approve sending this exact draft?*" -and $flowCli.text -like "*Final confirmation required*") "mail action confirmation output is missing"
-    Add-Scenario $scenarios "mail action follow-up" "Draft before send; require exact approval for send and double confirmation for trash/delete."
+    Assert-Flow ($flowCli.text -like "*nomadmail_open_message*" -and $flowCli.text -like "*nomadmail_execute_message_action*" -and $flowCli.text -like "*Approve sending this exact draft?*" -and $flowCli.text -like "*Final confirmation required*") "mail action confirmation output is missing"
+    Add-Scenario $scenarios "mail action follow-up" "Open Outlook Desktop messages by EntryID when requested; draft before send; require exact approval for send and double confirmation for trash/delete."
 
     $prompt = & node $service system-prompt | ConvertFrom-Json
     Assert-Flow ($prompt.status -eq "ok" -and $prompt.text -like "*docs/runbooks/agent-user-flow.md*" -and $prompt.text -like "*Your first response must show*") "startup prompt does not require the user flow"
@@ -189,9 +192,45 @@ This archive-only message validates the daily mail query path, read-only action 
     $messageActions = Invoke-RestMethod -Uri ("$baseUri/message-actions?id=" + [uri]::EscapeDataString($message.id)) -TimeoutSec 5
     Assert-Flow ($messageActions.status -eq "ok" -and $messageActions.actionGuide.actionable -eq $false -and $messageActions.actionGuide.userPrompt -like "*summarize*") "message action guide did not block archive mutation"
 
+    $actionDryRunBody = @{ action = "draft-new"; to = "agent-flow@example.invalid"; subject = "Dry run"; body = "Body"; dryRun = $true } | ConvertTo-Json
+    $actionDryRun = Invoke-RestMethod -Method Post -Uri "$baseUri/messages/action" -Body $actionDryRunBody -ContentType "application/json" -TimeoutSec 5
+    Assert-Flow ($actionDryRun.status -eq "dryRun" -and $actionDryRun.action -eq "draft-new" -and $actionDryRun.executed -eq $false) "HTTP message action dry-run failed"
+
     $latestBody = @{ syncFirst = $false; requireContent = $true } | ConvertTo-Json
     $latest = Invoke-RestMethod -Method Post -Uri "$baseUri/messages/latest" -Body $latestBody -ContentType "application/json" -TimeoutSec 5
     Assert-Flow ($latest.status -eq "notFound" -and $latest.freshnessRule -like "*one-shot live sync first*") "latest-email diagnostic read did not preserve freshness guidance"
+
+    $syntheticLiveId = "outlook-desktop:desktop-outlook:agent-flow-live"
+    [pscustomobject]@{
+        schemaVersion = 2
+        id = $syntheticLiveId
+        accountId = "desktop-outlook"
+        provider = "outlook-desktop"
+        providerMessageId = "agent-flow-entry-id"
+        conversationId = "agent-flow-conversation"
+        folder = "Inbox"
+        subject = "Agent automation flow live mail"
+        from = [pscustomobject]@{ name = "Flow Sender"; email = "sender@example.com" }
+        to = @([pscustomobject]@{ name = "Example User"; email = "user@example.com" })
+        receivedAt = "2026-05-06T10:15:00.000Z"
+        snippet = "Synthetic live message for assigned-agent automation."
+        unread = $true
+        flagged = $false
+        attachments = @()
+        capabilities = @("openInClient", "reply", "replyAll")
+        sourceType = "live-sync"
+        actionable = $true
+    } | ConvertTo-Json -Depth 30 -Compress | Set-Content -LiteralPath (Join-Path $env:NOMADINBOX_DATA_DIR "messages.jsonl") -Encoding UTF8
+
+    $automationBody = @{ assignedAgent = "codex"; limit = 5; syncFirst = $false } | ConvertTo-Json
+    $automation = Invoke-RestMethod -Method Post -Uri "$baseUri/agent-events/automation-cycle" -Body $automationBody -ContentType "application/json" -TimeoutSec 5
+    Assert-Flow ($automation.status -eq "ok" -and $automation.assignedAgent -eq "codex" -and $automation.createdCount -eq 1 -and $automation.safety -like "*do not imply approval*") "HTTP agent automation cycle did not create a bounded event"
+    $pendingEvents = Invoke-RestMethod -Uri "$baseUri/agent-events?assignedAgent=codex&status=pending" -TimeoutSec 5
+    Assert-Flow ($pendingEvents.status -eq "ok" -and $pendingEvents.count -eq 1 -and @($pendingEvents.events)[0].messageRefs[0].id -eq $syntheticLiveId) "HTTP agent event listing failed"
+    $ackBody = @{ acknowledgedBy = "codex" } | ConvertTo-Json
+    $ack = Invoke-RestMethod -Method Post -Uri ("$baseUri/agent-events/" + [uri]::EscapeDataString(@($pendingEvents.events)[0].eventId) + "/ack") -Body $ackBody -ContentType "application/json" -TimeoutSec 5
+    Assert-Flow ($ack.status -eq "ok" -and $ack.event.status -eq "acknowledged") "HTTP agent event acknowledgement failed"
+    Add-Scenario $scenarios "assigned-agent automation" "NomadInbox queues bounded local mail events for Codex or another assigned agent; the agent pulls and acknowledges them through MCP/HTTP without treating them as action approval."
 
     $selfTest = & node $service self-test | ConvertFrom-Json
     Assert-Flow ($selfTest.status -eq "ok" -and $selfTest.agentUserFlowStatus -eq "ok") "self-test did not validate agent user flow"

@@ -61,6 +61,69 @@ try {
     $sample = & $cli sample message | ConvertFrom-Json
     if ($sample.provider -ne "sample") { throw "sample message failed" }
 
+    $syntheticOutlookId = "outlook-desktop:desktop-outlook:synthetic-open"
+    $syntheticOutlookMessage = [pscustomobject]@{
+        schemaVersion = 2
+        id = $syntheticOutlookId
+        accountId = "desktop-outlook"
+        provider = "outlook-desktop"
+        providerMessageId = "synthetic-outlook-entry-id"
+        conversationId = "synthetic-conversation"
+        threadKey = "synthetic-conversation"
+        folder = "Inbox"
+        subject = "Synthetic Outlook open target"
+        from = [pscustomobject]@{ name = "Example Sender"; email = "sender@example.com" }
+        to = @([pscustomobject]@{ name = "Example User"; email = "user@example.com" })
+        cc = @()
+        receivedAt = "2026-04-15T10:30:00.000Z"
+        sentAt = $null
+        snippet = "Synthetic navigation target for dry-run open tests."
+        bodyText = $null
+        bodyHtml = $null
+        bodyTextAvailable = $false
+        bodyHtmlAvailable = $false
+        headers = @{}
+        unread = $false
+        flagged = $false
+        importance = $null
+        categories = @()
+        attachments = @()
+        capabilities = @("openInClient", "reply", "replyAll")
+        sourceType = "live-sync"
+        sourceProvider = "outlook-desktop"
+        actionable = $true
+    }
+    New-Item -ItemType Directory -Force -Path $env:NOMADINBOX_DATA_DIR | Out-Null
+    $syntheticOutlookMessage | ConvertTo-Json -Depth 30 -Compress | Set-Content -LiteralPath (Join-Path $env:NOMADINBOX_DATA_DIR "messages.jsonl") -Encoding UTF8
+    $openDryRun = & $cli message open --id $syntheticOutlookId --dry-run | ConvertFrom-Json
+    if ($openDryRun.status -ne "dryRun" -or $openDryRun.providerMessageId -ne "synthetic-outlook-entry-id" -or $openDryRun.opened -ne $false) {
+        throw "Outlook message dry-run open failed"
+    }
+    $openThreadDryRun = & $cli message open --conversation-id "synthetic-conversation" --latest-in-thread --dry-run | ConvertFrom-Json
+    if ($openThreadDryRun.status -ne "dryRun" -or $openThreadDryRun.id -ne $syntheticOutlookId) {
+        throw "Outlook conversation dry-run open failed"
+    }
+    $draftReplyDryRun = & $cli message action --action draft-reply --id $syntheticOutlookId --body "Acknowledged." --dry-run | ConvertFrom-Json
+    if ($draftReplyDryRun.status -ne "dryRun" -or $draftReplyDryRun.action -ne "draft-reply" -or $draftReplyDryRun.executed -ne $false) {
+        throw "Outlook draft reply dry-run failed"
+    }
+    $draftNewDryRun = & $cli message action --action draft-new --to user@example.com --subject "Synthetic draft" --body "Body" --dry-run | ConvertFrom-Json
+    if ($draftNewDryRun.status -ne "dryRun" -or $draftNewDryRun.action -ne "draft-new") {
+        throw "Outlook draft new dry-run failed"
+    }
+    $markPending = & $cli message action --action mark-read --id $syntheticOutlookId | ConvertFrom-Json
+    if ($markPending.status -ne "pendingConfirmation" -or $markPending.confirmationRequirement -ne "single" -or $markPending.requiredFlag -ne "--confirm-action") {
+        throw "Outlook mark-read confirmation gate failed"
+    }
+    $trashPending = & $cli message action --action trash --id $syntheticOutlookId | ConvertFrom-Json
+    if ($trashPending.status -ne "pendingConfirmation" -or $trashPending.confirmationRequirement -ne "double" -or $trashPending.requiredPhrase -ne "trash:$syntheticOutlookId") {
+        throw "Outlook trash double-confirmation gate failed"
+    }
+    $sendDraftDryRun = & $cli message action --action send-draft --draft-entry-id "synthetic-draft-entry-id" --dry-run | ConvertFrom-Json
+    if ($sendDraftDryRun.status -ne "dryRun" -or $sendDraftDryRun.action -ne "send-draft" -or $sendDraftDryRun.draftEntryId -ne "synthetic-draft-entry-id") {
+        throw "Outlook send draft dry-run failed"
+    }
+
     $emlPath = Join-Path $testRoot "sample.eml"
     @"
 From: Example Sender <sender@example.com>
@@ -127,7 +190,7 @@ This sample validates archive ingestion without using real mailbox exports.
     }
 
     $agentService = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") self-test | ConvertFrom-Json
-    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or $agentService.agentUserFlowStatus -ne "ok" -or $agentService.crossChatHandoffStatus -ne "ok" -or -not $agentService.latestMessageStatus -or $agentService.messageActionsStatus -ne "ok") {
+    if ($agentService.status -ne "ok" -or $agentService.toolCount -lt 10 -or $agentService.agentGuideStatus -ne "ok" -or $agentService.agentUserFlowStatus -ne "ok" -or $agentService.crossChatHandoffStatus -ne "ok" -or $agentService.agentEventsStatus -ne "ok" -or -not $agentService.latestMessageStatus -or $agentService.messageActionsStatus -ne "ok" -or -not $agentService.openMessageStatus -or $agentService.executeMessageActionStatus -ne "dryRun") {
         throw "agent service self-test failed"
     }
 
@@ -138,15 +201,44 @@ This sample validates archive ingestion without using real mailbox exports.
     if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_message_actions" }).Count -ne 1) {
         throw "message actions tool missing"
     }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_open_message" }).Count -ne 1) {
+        throw "open message tool missing"
+    }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_execute_message_action" }).Count -ne 1) {
+        throw "execute message action tool missing"
+    }
     if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_agent_user_flow" }).Count -ne 1) {
         throw "agent user flow tool missing"
     }
     if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_get_cross_chat_handoff" }).Count -ne 1) {
         throw "cross-chat handoff tool missing"
     }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_run_agent_automation_cycle" }).Count -ne 1) {
+        throw "agent automation cycle tool missing"
+    }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_list_agent_events" }).Count -ne 1) {
+        throw "agent events list tool missing"
+    }
+    if (@($tools.tools | Where-Object { $_.name -eq "nomadmail_ack_agent_event" }).Count -ne 1) {
+        throw "agent event ack tool missing"
+    }
+
+    $automation = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-automation-cycle --assigned-agent codex --limit 5 | ConvertFrom-Json
+    if ($automation.status -ne "ok" -or $automation.assignedAgent -ne "codex" -or $automation.createdCount -lt 1 -or $automation.safety -notlike "*do not imply approval*") {
+        throw "agent automation cycle did not create a local event"
+    }
+    $events = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-events --assigned-agent codex --status pending | ConvertFrom-Json
+    if ($events.status -ne "ok" -or $events.count -lt 1 -or @($events.events)[0].messageRefs[0].id -ne $syntheticOutlookId) {
+        throw "agent event listing failed"
+    }
+    $eventId = @($events.events)[0].eventId
+    $ack = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") ack-agent-event --event-id $eventId --acknowledged-by codex | ConvertFrom-Json
+    if ($ack.status -ne "ok" -or $ack.event.status -ne "acknowledged" -or $ack.event.acknowledgedBy -ne "codex") {
+        throw "agent event acknowledgement failed"
+    }
 
     $agentGuide = & node (Join-Path $repoRoot "service\nomadmail-service.mjs") agent-guide | ConvertFrom-Json
-    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.storageBoundary.rawProviderStore -or $agentGuide.storageBoundary.normalizationRule -notlike "*provider-raw.jsonl*" -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.agentUserFlow.text -or $agentGuide.agentUserFlow.text -notlike "*Daily Mail Query Menu*" -or -not $agentGuide.crossChatHandoff.text -or $agentGuide.crossChatHandoff.text -notlike "*nomadmail_get_cross_chat_handoff*" -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*") -or -not $agentGuide.generatedReportNaming -or $agentGuide.generatedReportNaming.rule -notlike "*date or time range*" -or -not $agentGuide.mailActionGuidance -or $agentGuide.mailActionGuidance.permissionModel.deleteApproval -notlike "*two explicit confirmations*") {
+    if ($agentGuide.status -ne "ok" -or -not $agentGuide.storageBoundary.rule -or -not $agentGuide.storageBoundary.rawProviderStore -or $agentGuide.storageBoundary.normalizationRule -notlike "*provider-raw.jsonl*" -or -not $agentGuide.agentAutomation -or $agentGuide.agentAutomation.codexPattern -notlike "*Codex MCP server*" -or -not $agentGuide.startupSystemPrompt.text -or -not $agentGuide.workspaceState.text -or -not $agentGuide.agentUserFlow.text -or $agentGuide.agentUserFlow.text -notlike "*Daily Mail Query Menu*" -or -not $agentGuide.crossChatHandoff.text -or $agentGuide.crossChatHandoff.text -notlike "*nomadmail_get_cross_chat_handoff*" -or -not $agentGuide.timeHandling.parsingRule -or $agentGuide.timeHandling.timeZone -notin @("Asia/Kolkata", "Asia/Calcutta") -or (($agentGuide.liveSyncGuidance -join " ") -notlike "*nomadmail_get_latest_message*") -or -not $agentGuide.generatedReportNaming -or $agentGuide.generatedReportNaming.rule -notlike "*date or time range*" -or -not $agentGuide.mailActionGuidance -or $agentGuide.mailActionGuidance.permissionModel.deleteApproval -notlike "*two explicit confirmations*" -or $agentGuide.mailActionGuidance.implementationNote -notlike "*execute Outlook Desktop draft*") {
         throw "agent guide failed"
     }
 
@@ -178,7 +270,7 @@ This sample validates archive ingestion without using real mailbox exports.
 
     [pscustomobject]@{
         status = "ok"
-        tests = @("doctor", "providers list", "accounts list", "install windows helper", "environment status", "tray status", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "message actions tool", "agent user flow tool", "cross-chat handoff tool", "agent guide", "startup system prompt", "agent user flow", "cross-chat handoff", "workspace state", "versioned installer package")
+        tests = @("doctor", "providers list", "accounts list", "install windows helper", "environment status", "tray status", "node install windows helper", "sync account", "service status", "backup status", "import status", "sample message", "outlook message dry-run open", "outlook conversation dry-run open", "outlook action dry-runs", "outlook action confirmation gates", "import eml", "locale date import", "locale time zone import", "agent service self-test", "latest message tool", "message actions tool", "open message tool", "execute message action tool", "agent user flow tool", "cross-chat handoff tool", "agent automation event tools", "agent automation cycle", "agent event acknowledgement", "agent guide", "startup system prompt", "agent user flow", "cross-chat handoff", "workspace state", "versioned installer package")
     } | ConvertTo-Json -Depth 5
 } finally {
     if ($null -eq $previousDataDir) {

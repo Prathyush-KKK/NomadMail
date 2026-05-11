@@ -27,6 +27,8 @@ Latest email questions:
 Mail action follow-up:
 - After showing a discovered email, offer a short action menu instead of stopping at the message summary: draft reply, draft reply all, draft forward, draft a new email, mark read/unread, flag/star, move/archive, or trash/delete when the selected live message supports it.
 - Use `nomadmail_get_message_actions` or the message `actionMenu` to decide which actions to offer. Imported archive messages are read-only context; offer summarize, extract follow-up, or find the matching live message instead of mailbox actions.
+- If the user asks to go to a specific Outlook Desktop message or thread, use `nomadmail_open_message` with the selected message id or conversation id. Use search terms only as a fallback when the EntryID is missing or stale.
+- For Outlook Desktop live messages, use `nomadmail_execute_message_action` only after the user has selected and approved the action. Supported actions are draft reply, draft reply all, draft forward, draft new mail, send approved draft, mark read/unread, flag/unflag, move, archive, save attachment, and trash/delete. Send requires `confirmSend`; mark/flag/move/archive/save attachment require `confirmAction`; trash/delete requires `confirmDelete` and `confirmFinal`.
 - Be explicit that actions may not complete if provider permissions or local runtime access are missing. Prior Windows runs showed Graph/export paths can be unavailable, Gmail or Graph may be read-only without write/send scopes, and Outlook Desktop actions require Outlook COM access in the signed-in user session.
 - Replies, forwards, and new mail must be drafted first. Show or save the draft, then send only after the user explicitly approves the exact draft/recipients/subject/body.
 - Trash/delete requires double explicit approval. First confirm the user really wants deletion/trash, then ask for a final confirmation that names the message and mailbox effect before performing any delete/trash operation.
@@ -38,6 +40,12 @@ Service and tray setup:
 - The tray popup renders from cached state. Status refresh, Sync now, and auto-sync changes must show immediate UI feedback and then run asynchronously without blocking popup opening.
 - Use `.\scripts\nomad-inbox.ps1 tray status` for non-interactive tray verification. If the user says they cannot see the tray icon, check whether the tray process is running, then tell them to open the Windows notification overflow area. Only show process details or logs if they ask for diagnostics.
 - Starting the tray does not enable mailbox auto sync. Auto sync still needs explicit approval after accounts are connected.
+
+Assigned-agent automation:
+- Use `nomadmail_run_agent_automation_cycle` to create bounded local review events for an assigned agent such as Codex, Claude Code, or Kiro.
+- Use `nomadmail_list_agent_events` to show pending events and `nomadmail_ack_agent_event` only after the event is handled.
+- Treat automation events as review prompts only. They do not authorize reading additional mail content, storing bodies, sending, moving, archiving, marking, saving attachments, trashing, or deleting.
+- Codex should consume NomadMail events through the local MCP server or tray-owned HTTP service, then ask the user which event to inspect.
 
 Agent script policy:
 - Prefer built-in NomadMail tools, the Node service commands, and the existing PowerShell CLI.
@@ -59,7 +67,7 @@ Commit policy:
 Response style:
 - Keep user-facing status short and outcome-focused.
 - When the service or tray is installed/running, tell the user they can access NomadMail from the NomadInbox system tray icon and that agents can use the local service.
-- When the user asks how to call NomadMail from another chat, point them to the cross-chat handoff prompt or serve it through `nomadmail_get_cross_chat_handoff` / `/cross-chat-handoff`.
+- When the user asks how to call NomadMail from another chat, point them to the cross-chat handoff prompt or serve it through `nomadmail_get_cross_chat_handoff` / `/cross-chat-handoff`. Tell the other agent to try MCP first, tray-owned HTTP second, and direct repo CLI third; if `nomadmail_*` MCP tools are not visible in that chat, fall back instead of treating it as a service failure.
 - Do not dump endpoint lists, raw health JSON, provider JSON, process tables, message IDs, or search results unless the user explicitly asks for diagnostics.
 - For successful setup or service start, prefer one short status sentence plus the next approval question.
 - A good service-start response is: "NomadMail is running from the NomadInbox system tray. Click the tray icon for Refresh, Sync now, auto sync, and account status, or open Settings from the tray for diagnostics; auto sync is still off until you enable it."

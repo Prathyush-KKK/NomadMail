@@ -66,6 +66,113 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CrossChatHandoff"
+  /agent-events:
+    get:
+      operationId: nomadmailListAgentEvents
+      summary: List local assigned-agent automation events
+      description: Returns bounded local events for an assigned agent such as Codex. Events are review prompts and do not authorize mailbox mutation.
+      parameters:
+        - name: assignedAgent
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, acknowledged, all]
+            default: pending
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        "200":
+          description: Agent event list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentEventList"
+  /agent-events/automation-cycle:
+    post:
+      operationId: nomadmailRunAgentAutomationCycle
+      summary: Queue local review events for an assigned agent
+      description: Creates pending local events from live synced messages, optionally after a one-shot sync against already enabled accounts. This never sends, deletes, moves, archives, marks, or saves attachments.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                assignedAgent:
+                  type: string
+                  default: codex
+                accountId:
+                  type: string
+                syncFirst:
+                  type: boolean
+                  default: false
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 50
+                  default: 10
+                onlyUnread:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Automation cycle result
+  /agent-events/ack:
+    post:
+      operationId: nomadmailAckAgentEvent
+      summary: Acknowledge one local assigned-agent event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId]
+              properties:
+                eventId:
+                  type: string
+                acknowledgedBy:
+                  type: string
+                  default: agent
+      responses:
+        "200":
+          description: Acknowledgement result
+  /agent-events/{eventId}/ack:
+    post:
+      operationId: nomadmailAckAgentEventById
+      summary: Acknowledge one local assigned-agent event by path id
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                acknowledgedBy:
+                  type: string
+                  default: agent
+      responses:
+        "200":
+          description: Acknowledgement result
   /health:
     get:
       operationId: nomadmailHealthCheck
@@ -160,6 +267,45 @@ paths:
       responses:
         "200":
           description: Latest live message result
+  /messages/open:
+    post:
+      operationId: nomadmailOpenMessage
+      summary: Open a synced Outlook Desktop message in the local Outlook client
+      description: Resolves a selected NomadMail message id or Outlook conversation id to the preserved Outlook EntryID and opens it through Outlook Desktop COM.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                conversationId:
+                  type: string
+                latestInThread:
+                  type: boolean
+                  default: true
+                dryRun:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Open result, dry-run target, or unsupported-runtime response
+  /messages/action:
+    post:
+      operationId: nomadmailExecuteMessageAction
+      summary: Execute an approved Outlook Desktop message action
+      description: Draft actions save drafts only. Send requires confirmSend. Mark, flag, move, archive, and save attachment require confirmAction. Trash/delete requires confirmDelete and confirmFinal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageActionExecuteRequest"
+      responses:
+        "200":
+          description: Action result, dry-run result, or pending-confirmation response
   /sync/once:
     post:
       operationId: nomadmailSyncOnce
@@ -325,6 +471,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MessageActionGuideResult"
+  /messages/{id}/open:
+    post:
+      operationId: nomadmailOpenMessageById
+      summary: Open one synced Outlook Desktop message by NomadMail id
+      description: Navigation-only action. Uses the preserved Outlook EntryID and does not mutate mail.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dryRun:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Open result or dry-run target
+  /messages/{id}/action:
+    post:
+      operationId: nomadmailExecuteMessageActionById
+      summary: Execute an approved Outlook Desktop action for one message
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MessageActionExecuteRequest"
+      responses:
+        "200":
+          description: Action result, dry-run result, or pending-confirmation response
   /message-actions:
     get:
       operationId: nomadmailGetGeneralMessageActions
@@ -374,6 +563,21 @@ components:
           $ref: "#/components/schemas/AgentUserFlow"
         crossChatHandoff:
           $ref: "#/components/schemas/CrossChatHandoff"
+        agentAutomation:
+          type: object
+          properties:
+            rule:
+              type: string
+            eventStore:
+              type: string
+            codexPattern:
+              type: string
+            eventTools:
+              type: array
+              items:
+                type: string
+            privacyBoundary:
+              type: string
         storageBoundary:
           type: object
           properties:
@@ -460,6 +664,81 @@ components:
           type: string
         text:
           type: string
+    AgentEventList:
+      type: object
+      properties:
+        status:
+          type: string
+        service:
+          type: string
+        assignedAgent:
+          type: string
+          nullable: true
+        eventStatus:
+          type: string
+        count:
+          type: integer
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentEvent"
+        eventsPath:
+          type: string
+        usage:
+          type: string
+    AgentEvent:
+      type: object
+      required: [schemaVersion, eventId, status, eventType, assignedAgent, createdAt, summary]
+      properties:
+        schemaVersion:
+          type: integer
+          enum: [1]
+        eventId:
+          type: string
+        status:
+          type: string
+          enum: [pending, acknowledged]
+        eventType:
+          type: string
+        priority:
+          type: string
+          enum: [low, normal, high]
+        assignedAgent:
+          type: string
+        createdAt:
+          type: string
+        createdAtLocal:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+        acknowledgedAt:
+          type: string
+          nullable: true
+        acknowledgedBy:
+          type: string
+          nullable: true
+        source:
+          type: string
+        accountId:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+        summary:
+          type: string
+        messageRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageSummary"
+        actionHint:
+          type: string
+        dedupeKey:
+          type: string
+          nullable: true
+        metadata:
+          type: object
     Account:
       type: object
       properties:
@@ -605,6 +884,70 @@ components:
           $ref: "#/components/schemas/MessageSummary"
         actionGuide:
           $ref: "#/components/schemas/MessageActionGuide"
+    MessageActionExecuteRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum:
+            - draft-reply
+            - draft-reply-all
+            - draft-forward
+            - draft-new
+            - send-draft
+            - mark-read
+            - mark-unread
+            - flag
+            - unflag
+            - move
+            - archive
+            - save-attachment
+            - trash
+            - delete
+        id:
+          type: string
+        conversationId:
+          type: string
+        latestInThread:
+          type: boolean
+          default: true
+        to:
+          type: string
+        cc:
+          type: string
+        bcc:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        targetFolder:
+          type: string
+        attachmentId:
+          type: string
+        outputDir:
+          type: string
+        draftEntryId:
+          type: string
+        openDraft:
+          type: boolean
+          default: false
+        confirmAction:
+          type: boolean
+          default: false
+        confirmSend:
+          type: boolean
+          default: false
+        confirmDelete:
+          type: boolean
+          default: false
+        confirmFinal:
+          type: string
+        dryRun:
+          type: boolean
+          default: false
+      additionalProperties: false
     MessageActionGuide:
       type: object
       properties:

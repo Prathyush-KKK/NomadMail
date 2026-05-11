@@ -1,5 +1,23 @@
 # Session Architecture Changelog
 
+## 2026-05-11 - Assigned-agent automation events
+
+Summary:
+
+- Added local NomadMail automation events for assigned agents such as Codex, including MCP and HTTP event listing, acknowledgement, automation-cycle tools, Codex setup documentation, schema coverage, and synthetic tests.
+
+Session note:
+
+- docs/governance/session-updates/20260511-002106-assigned-agent-automation-events.md
+## 2026-05-10 - Outlook Desktop action execution
+
+Summary:
+
+- Implemented permission-gated Outlook Desktop actions for draft creation, approved draft sending, mark read/unread, flag/unflag, move, archive, attachment save, and trash/delete with dry-run and confirmation gates.
+
+Session note:
+
+- docs/governance/session-updates/20260510-215712-outlook-desktop-action-execution.md
 ## 2026-05-07 - Cross-chat environment discovery
 
 Summary:

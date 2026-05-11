@@ -57,6 +57,20 @@ Background sync:
   .\scripts\nomad-inbox.ps1 tray start
   .\scripts\nomad-inbox.ps1 tray status
 
+Message navigation:
+  .\scripts\nomad-inbox.ps1 message open --id <nomadmail-message-id>
+  .\scripts\nomad-inbox.ps1 message open --conversation-id <outlook-conversation-id> --latest-in-thread
+  Add --dry-run to resolve the Outlook target without opening the desktop item.
+
+Outlook Desktop actions:
+  .\scripts\nomad-inbox.ps1 message action --action draft-reply --id <message-id> --body "Thanks, I will check." --open-draft
+  .\scripts\nomad-inbox.ps1 message action --action draft-new --to user@example.com --subject "Subject" --body "Body"
+  .\scripts\nomad-inbox.ps1 message action --action send-draft --draft-entry-id <outlook-draft-entry-id> --confirm-send
+  .\scripts\nomad-inbox.ps1 message action --action mark-read --id <message-id> --confirm-action
+  .\scripts\nomad-inbox.ps1 message action --action archive --id <message-id> --confirm-action
+  .\scripts\nomad-inbox.ps1 message action --action trash --id <message-id> --confirm-delete --confirm-final "trash:<message-id>"
+  Add --dry-run to preview any action without touching Outlook.
+
 This bootstrap does not ship mailbox data, token caches, or secrets.
 "@
 }
@@ -176,7 +190,7 @@ function Get-NomadInboxTrayStatus {
         error = $null
     }
     try {
-        $health = Invoke-RestMethod -Uri "http://127.0.0.1:8791/health" -TimeoutSec 2
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:8791/health" -TimeoutSec 20
         $httpStatus = [pscustomobject]@{
             status = $health.status
             url = "http://127.0.0.1:8791"
@@ -337,6 +351,42 @@ try {
             $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
             $accountId = Get-NomadInboxOption $options "account-id" ""
             Invoke-NomadInboxSyncOnce -AccountId $accountId | ConvertTo-Json -Depth 40
+        }
+        "message" {
+            switch ($Subcommand) {
+                "open" {
+                    $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+                    Open-NomadInboxOutlookDesktopMessage `
+                        -Id (Get-NomadInboxOption $options "id" "") `
+                        -ConversationId (Get-NomadInboxOption $options "conversation-id" "") `
+                        -LatestInThread:($options.ContainsKey("latest-in-thread")) `
+                        -DryRun:($options.ContainsKey("dry-run")) | ConvertTo-Json -Depth 30
+                }
+                "action" {
+                    $options = ConvertTo-NomadInboxOptions -Tokens $RemainingArgs
+                    Invoke-NomadInboxOutlookDesktopMessageAction `
+                        -Action (Require-NomadInboxOption $options "action") `
+                        -Id (Get-NomadInboxOption $options "id" "") `
+                        -ConversationId (Get-NomadInboxOption $options "conversation-id" "") `
+                        -LatestInThread:($options.ContainsKey("latest-in-thread")) `
+                        -To (Get-NomadInboxOption $options "to" "") `
+                        -Cc (Get-NomadInboxOption $options "cc" "") `
+                        -Bcc (Get-NomadInboxOption $options "bcc" "") `
+                        -Subject (Get-NomadInboxOption $options "subject" "") `
+                        -Body (Get-NomadInboxOption $options "body" "") `
+                        -TargetFolder (Get-NomadInboxOption $options "target-folder" "") `
+                        -AttachmentId (Get-NomadInboxOption $options "attachment-id" "") `
+                        -OutputDir (Get-NomadInboxOption $options "output-dir" "") `
+                        -DraftEntryId (Get-NomadInboxOption $options "draft-entry-id" "") `
+                        -OpenDraft:($options.ContainsKey("open-draft")) `
+                        -ConfirmAction:($options.ContainsKey("confirm-action")) `
+                        -ConfirmSend:($options.ContainsKey("confirm-send")) `
+                        -ConfirmDelete:($options.ContainsKey("confirm-delete")) `
+                        -ConfirmFinal (Get-NomadInboxOption $options "confirm-final" "") `
+                        -DryRun:($options.ContainsKey("dry-run")) | ConvertTo-Json -Depth 50
+                }
+                default { throw "Unsupported message subcommand. Use: message open|action" }
+            }
         }
         "service" {
             switch ($Subcommand) {

@@ -205,6 +205,9 @@ try {
             "nomadmail_search_messages",
             "nomadmail_get_latest_message",
             "nomadmail_get_message_actions",
+            "nomadmail_run_agent_automation_cycle",
+            "nomadmail_list_agent_events",
+            "nomadmail_ack_agent_event",
             "nomadmail_import_archive"
         )
         $toolNames = @($tools.tools | ForEach-Object { $_.name })
@@ -276,6 +279,25 @@ This validates that a brand new clone can import and search read-only archive co
         Assert-NewClone ($actions.actionGuide.actionable -eq $false) "archive message should be non-actionable"
         $latest = Invoke-RestMethod -Method Post -Uri "$baseUri/messages/latest" -Body (@{ syncFirst = $false; requireContent = $true } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 5
         Assert-NewClone ($latest.freshnessRule -like "*one-shot live sync first*") "latest freshness rule missing"
+        $syntheticLiveId = "outlook-desktop:desktop-outlook:new-clone-event"
+        [pscustomobject]@{
+            schemaVersion = 2
+            id = $syntheticLiveId
+            accountId = "desktop-outlook"
+            provider = "outlook-desktop"
+            providerMessageId = "new-clone-entry-id"
+            subject = "New clone automation event"
+            from = [pscustomobject]@{ email = "sender@example.com" }
+            receivedAt = "2026-05-06T10:15:00.000Z"
+            unread = $true
+            sourceType = "live-sync"
+            actionable = $true
+        } | ConvertTo-Json -Depth 20 -Compress | Set-Content -LiteralPath (Join-Path $env:NOMADINBOX_DATA_DIR "messages.jsonl") -Encoding UTF8
+        $automation = Invoke-RestMethod -Method Post -Uri "$baseUri/agent-events/automation-cycle" -Body (@{ assignedAgent = "codex"; limit = 5 } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 5
+        Assert-NewClone ($automation.status -eq "ok" -and $automation.createdCount -eq 1) "agent automation event creation failed"
+        $events = Invoke-RestMethod -Uri "$baseUri/agent-events?assignedAgent=codex&status=pending" -TimeoutSec 5
+        $eventMessageId = @($events.events)[0].messageRefs[0].id
+        Assert-NewClone ($events.status -eq "ok" -and $events.count -eq 1 -and $eventMessageId -eq $syntheticLiveId) "agent event listing failed"
         [pscustomobject]@{
             port = $port
             health = $health.status
@@ -283,6 +305,7 @@ This validates that a brand new clone can import and search read-only archive co
             searchCount = $search.count
             archiveActionable = $actions.actionGuide.actionable
             latestStatus = $latest.status
+            agentEvents = $events.count
         }
     }
 

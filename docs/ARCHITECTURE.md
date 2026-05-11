@@ -22,6 +22,7 @@ Command Layer
   +-- Archive Importer
   +-- Backup Status / User Prompts
   +-- Message Store
+  +-- Agent Event Queue
   +-- Action Audit Log
   |
   v
@@ -181,6 +182,11 @@ NomadMail currently exposes these MCP tools:
 - `nomadmail_get_agent_guide`
 - `nomadmail_get_startup_system_prompt`
 - `nomadmail_get_workspace_state`
+- `nomadmail_get_agent_user_flow`
+- `nomadmail_get_cross_chat_handoff`
+- `nomadmail_run_agent_automation_cycle`
+- `nomadmail_list_agent_events`
+- `nomadmail_ack_agent_event`
 - `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
@@ -194,6 +200,8 @@ NomadMail currently exposes these MCP tools:
 - `nomadmail_start_service`
 - `nomadmail_stop_service`
 - `nomadmail_import_archive`
+- `nomadmail_open_message`
+- `nomadmail_execute_message_action`
 
 The service runtime is `service/nomadmail-service.mjs`. It uses Node.js with no
 external package dependency and calls the existing PowerShell CLI for command
@@ -202,6 +210,14 @@ and HTTP clients get a fast provider-neutral search surface. Latest-email read
 requests use a freshness-gated path: run one-shot live sync first, then return
 the newest live message with available preview content. If sync cannot complete,
 agents must not describe stale local state as definitely latest.
+
+Assigned-agent automation is exposed through the same service contract. The
+automation cycle creates bounded local review events in `data/agent-events.jsonl`
+for labels such as `codex`, `claude-code`, or `kiro`. Agents pull those events
+through MCP/HTTP, inspect referenced messages through normal NomadMail tools
+only when needed, and acknowledge handled events. A queued event is never
+approval to fetch additional content, send, delete, move, archive, mark, flag, or
+save attachments.
 
 ## Provider Contract
 
@@ -217,6 +233,7 @@ Providers should expose these capabilities where supported:
 - `search`
 - `get`
 - `message actions`
+- `open in provider client`
 - `attachments list`
 - `attachments save`
 - `compose draft`
@@ -249,9 +266,36 @@ Read paths normalize records before search, summaries, action guidance, or diges
 views. This protects older JSONL rows, archive imports, and future schema changes
 from leaking provider-specific shape differences into the agent or tray UI.
 Draft, send, attachment hydration, and state mutation remain governed by the
-safety / approval gate before service exposure.
-The MCP/HTTP service can expose action guidance for discovered messages, but
-that guidance is not itself permission to mutate a mailbox.
+safety / approval gate before service exposure. The MCP/HTTP service can expose
+action guidance for discovered messages, but that guidance is not itself
+permission to mutate a mailbox.
+
+Outlook Desktop has direct live-message actions behind that gate. The adapter
+preserves Outlook EntryID as `providerMessageId`; `nomadmail_open_message`,
+`POST /messages/open`, and `message open` resolve a selected message id or
+conversation id to that EntryID and call Outlook COM `Display()`.
+
+`nomadmail_execute_message_action`, `POST /messages/action`, and `message action`
+execute the current Outlook Desktop action set:
+
+- draft reply
+- draft reply all
+- draft forward
+- draft new mail
+- send approved draft
+- mark read/unread
+- flag/unflag
+- move
+- archive
+- save attachment
+- trash/delete
+
+Draft actions save a draft but do not send. Send requires `confirmSend`.
+Mark/flag/move/archive/attachment-save require `confirmAction`. Trash/delete
+requires `confirmDelete` plus the returned `confirmFinal` phrase. `delete` moves
+to Deleted Items; permanent delete is not a default NomadInbox action. If Outlook
+cannot resolve a stale EntryID, the user should run a fresh sync or fall back to
+Outlook search terms from the message summary.
 
 ## Archive Import Contract
 

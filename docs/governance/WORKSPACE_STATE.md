@@ -1,6 +1,6 @@
 # NomadInbox Workspace State
 
-Last updated: 2026-05-07
+Last updated: 2026-05-11
 
 ## Current Summary
 
@@ -8,7 +8,7 @@ NomadInbox is a local-first mailbox visibility and action service. NomadMail is 
 
 Current workspace state:
 
-- NomadMail exposes agent guidance, startup system prompt, local message search, message lookup, permission-gated message action guidance, provider/account discovery, one-shot sync, archive import, service status, and background worker controls.
+- NomadMail exposes agent guidance, startup system prompt, local message search, message lookup, permission-gated message action guidance and Outlook Desktop action execution, provider/account discovery, one-shot sync, archive import, service status, and background worker controls.
 - The startup system prompt is system-owned at prompts/nomadmail-startup.system.md.
 - Cross-chat handoff is system-owned at prompts/nomadmail-cross-chat-handoff.md and is exposed through nomadmail_get_cross_chat_handoff and HTTP /cross-chat-handoff.
 - On Windows, the PowerShell helper initializes ignored runtime state and account config without reading mail or starting auto sync.
@@ -45,18 +45,18 @@ The state file should capture durable workspace behavior and follow-ups. It shou
 
 ## Latest Session
 
-Title: Cross-chat environment discovery
+Title: Assigned-agent automation events
 
 Status: completed
 
 Summary:
 
-- Added root agent bootstrap guidance and Windows user environment registration for NOMADINBOX_HOME and NomadMail handoff variables so another chat can discover the workspace and fetch the cross-chat handoff without the user memorizing commands.
+- Added local NomadMail automation events for assigned agents such as Codex, including MCP and HTTP event listing, acknowledgement, automation-cycle tools, Codex setup documentation, schema coverage, and synthetic tests.
 
 Workspace revision:
 
 - Branch: main
-- HEAD: a643183
+- HEAD: 9d3245e
 
 ## Open Follow-Ups
 

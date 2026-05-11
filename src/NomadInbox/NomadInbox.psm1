@@ -73,7 +73,7 @@ function ConvertTo-NomadInboxOptions {
         $token = $Tokens[$i]
         if (-not $token.StartsWith("--")) { throw "Unexpected argument: $token" }
         $key = $token.Substring(2)
-        if ($key -in @("include-bodies", "dry-run", "start-tray", "skip-user-env")) {
+        if ($key -in @("include-bodies", "dry-run", "latest-in-thread", "start-tray", "skip-user-env", "open-draft", "confirm-action", "confirm-send", "confirm-delete")) {
             $options[$key] = "true"
             continue
         }
@@ -497,7 +497,12 @@ function Write-NomadInboxActionRecord {
         [string]$Status,
         [hashtable]$InputObject,
         [hashtable]$ResultObject,
-        [string]$ErrorMessage
+        [string]$ErrorMessage,
+        [string]$MessageId = $null,
+        [string]$DraftId = $null,
+        [bool]$RequiresUserConfirmation = $false,
+        [bool]$ConfirmedByUser = $false,
+        [string]$ConfirmationRequirement = "none"
     )
     Initialize-NomadInbox | Out-Null
     $provider = if ($InputObject.ContainsKey("provider")) { $InputObject.provider } else { "sample" }
@@ -505,11 +510,12 @@ function Write-NomadInboxActionRecord {
         actionId = [guid]::NewGuid().ToString()
         timestamp = Get-NomadInboxUtcNowIso
         provider = $provider
-        messageId = $null
-        draftId = $null
+        messageId = $MessageId
+        draftId = $DraftId
         actionType = $ActionType
-        requiresUserConfirmation = $false
-        confirmedByUser = $false
+        requiresUserConfirmation = $RequiresUserConfirmation
+        confirmedByUser = $ConfirmedByUser
+        confirmationRequirement = $ConfirmationRequirement
         status = $Status
         input = $InputObject
         result = $ResultObject
@@ -678,6 +684,708 @@ function Write-NomadInboxLiveMessages {
     }
     $lines = @($byId.Values | ForEach-Object { $_ | ConvertTo-Json -Depth 50 -Compress })
     $lines | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
+function Read-NomadInboxLiveMessageRecords {
+    $path = Get-NomadInboxMessagesPath
+    if (-not (Test-Path -LiteralPath $path)) { return @() }
+
+    $records = @()
+    foreach ($line in [System.IO.File]::ReadLines($path)) {
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        try {
+            $records += ($line | ConvertFrom-Json)
+        } catch {
+        }
+    }
+    return $records
+}
+
+function Get-NomadInboxMessageSortTime {
+    param($Record)
+    foreach ($name in @("receivedAt", "sentAt", "normalizedAt", "importedAt")) {
+        $value = [string]$Record.$name
+        if ([string]::IsNullOrWhiteSpace($value)) { continue }
+        try {
+            return ([datetimeoffset]::Parse($value, [System.Globalization.CultureInfo]::InvariantCulture)).UtcDateTime
+        } catch {
+        }
+    }
+    return [datetime]::MinValue
+}
+
+function Resolve-NomadInboxOutlookDesktopMessageTarget {
+    param(
+        [string]$Id,
+        [string]$ConversationId,
+        [bool]$LatestInThread = $true
+    )
+
+    $records = @(Read-NomadInboxLiveMessageRecords | Where-Object {
+        $_.provider -eq "outlook-desktop" -and
+        ($_.sourceType -eq $null -or $_.sourceType -eq "live-sync" -or $_.sourceType -eq "")
+    })
+
+    if (-not [string]::IsNullOrWhiteSpace($Id)) {
+        $match = @($records | Where-Object { $_.id -eq $Id } | Select-Object -First 1)
+        if ($match.Count -gt 0) { return $match[0] }
+        return $null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ConversationId)) {
+        $matches = @($records | Where-Object {
+            $_.conversationId -eq $ConversationId -or $_.threadKey -eq $ConversationId
+        })
+        if ($matches.Count -eq 0) { return $null }
+        if ($LatestInThread) {
+            return @($matches | Sort-Object -Property @{ Expression = { Get-NomadInboxMessageSortTime $_ }; Descending = $true } | Select-Object -First 1)[0]
+        }
+        return $matches[0]
+    }
+
+    throw "Either --id or --conversation-id is required."
+}
+
+function Open-NomadInboxOutlookDesktopMessage {
+    param(
+        [string]$Id,
+        [string]$ConversationId,
+        [switch]$LatestInThread,
+        [switch]$DryRun
+    )
+
+    $target = Resolve-NomadInboxOutlookDesktopMessageTarget -Id $Id -ConversationId $ConversationId -LatestInThread:([bool]$LatestInThread)
+    if ($null -eq $target) {
+        return [pscustomobject]@{
+            status = "notFound"
+            service = $script:ServiceName
+            provider = "outlook-desktop"
+            id = if ([string]::IsNullOrWhiteSpace($Id)) { $null } else { $Id }
+            conversationId = if ([string]::IsNullOrWhiteSpace($ConversationId)) { $null } else { $ConversationId }
+            opened = $false
+            reason = "No live synced Outlook Desktop message matched the requested id or conversation."
+            fallback = "Run a fresh Outlook Desktop sync, search again, or use Outlook search terms if the EntryID is missing or stale."
+        }
+    }
+
+    $entryId = [string]$target.providerMessageId
+    if ([string]::IsNullOrWhiteSpace($entryId)) {
+        $entryId = [string]$target.entryId
+    }
+    if ([string]::IsNullOrWhiteSpace($entryId)) {
+        return [pscustomobject]@{
+            status = "missingProviderMessageId"
+            service = $script:ServiceName
+            provider = "outlook-desktop"
+            id = $target.id
+            conversationId = $target.conversationId
+            opened = $false
+            reason = "The stored Outlook Desktop message has no EntryID/providerMessageId."
+            fallback = "Run a fresh Outlook Desktop sync so NomadInbox can preserve the provider-native EntryID."
+        }
+    }
+
+    $baseResult = [ordered]@{
+        status = if ($DryRun) { "dryRun" } else { "ok" }
+        service = $script:ServiceName
+        provider = "outlook-desktop"
+        id = $target.id
+        accountId = $target.accountId
+        providerMessageId = $entryId
+        conversationId = $target.conversationId
+        threadKey = $target.threadKey
+        folder = $target.folder
+        subject = $target.subject
+        receivedAt = $target.receivedAt
+        opened = $false
+        mode = if (-not [string]::IsNullOrWhiteSpace($Id)) { "message" } else { "conversation" }
+    }
+
+    if ($DryRun) {
+        $baseResult.opened = $false
+        $baseResult.message = "Dry run resolved the Outlook Desktop message target without opening Outlook."
+        return [pscustomobject]$baseResult
+    }
+
+    if (-not $IsWindows -and $PSVersionTable.PSEdition -eq "Core") {
+        $baseResult.status = "unsupportedRuntime"
+        $baseResult.reason = "Opening an Outlook Desktop item requires Windows Outlook COM in the signed-in desktop session."
+        return [pscustomobject]$baseResult
+    }
+
+    try {
+        $outlook = New-Object -ComObject Outlook.Application
+        $namespace = $outlook.GetNamespace("MAPI")
+        $item = $namespace.GetItemFromID($entryId)
+        if ($null -eq $item) {
+            $baseResult.status = "notFoundInOutlook"
+            $baseResult.reason = "Outlook did not return an item for the stored EntryID."
+            $baseResult.fallback = "Run a fresh Outlook Desktop sync or use Outlook search terms from the message summary."
+            return [pscustomobject]$baseResult
+        }
+        $item.Display()
+        $baseResult.opened = $true
+        $baseResult.message = "Opened the synced Outlook Desktop message in Outlook."
+        Write-NomadInboxActionRecord -ActionType "openMessage" -Status "success" -InputObject @{ id = $target.id; provider = "outlook-desktop"; conversationId = $target.conversationId } -ResultObject @{ opened = $true } -ErrorMessage $null | Out-Null
+        return [pscustomobject]$baseResult
+    } catch {
+        $baseResult.status = "error"
+        $baseResult.error = [string]$_.Exception.Message
+        $baseResult.fallback = "Outlook COM could not open the stored EntryID. Run a fresh sync or use Outlook search terms from the message summary."
+        Write-NomadInboxActionRecord -ActionType "openMessage" -Status "error" -InputObject @{ id = $target.id; provider = "outlook-desktop"; conversationId = $target.conversationId } -ResultObject @{ opened = $false } -ErrorMessage ([string]$_.Exception.Message) | Out-Null
+        return [pscustomobject]$baseResult
+    }
+}
+
+function Update-NomadInboxLiveMessageRecord {
+    param(
+        [string]$Id,
+        [hashtable]$Updates
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Id) -or $null -eq $Updates -or $Updates.Count -eq 0) {
+        return $false
+    }
+
+    $records = @(Read-NomadInboxLiveMessageRecords)
+    $changed = $false
+    foreach ($record in $records) {
+        if ([string]$record.id -ne $Id) { continue }
+        foreach ($key in $Updates.Keys) {
+            if ($record.PSObject.Properties.Name -contains $key) {
+                $record.$key = $Updates[$key]
+            } else {
+                $record | Add-Member -NotePropertyName $key -NotePropertyValue $Updates[$key] -Force
+            }
+        }
+        $changed = $true
+    }
+
+    if (-not $changed) { return $false }
+
+    $path = Get-NomadInboxMessagesPath
+    $lines = @($records | ForEach-Object { $_ | ConvertTo-Json -Depth 50 -Compress })
+    $lines | Set-Content -LiteralPath $path -Encoding UTF8
+    return $true
+}
+
+function Resolve-NomadInboxOutlookDesktopEntryId {
+    param($Target)
+
+    if ($null -eq $Target) { return $null }
+    $entryId = [string]$Target.providerMessageId
+    if ([string]::IsNullOrWhiteSpace($entryId)) {
+        $entryId = [string]$Target.entryId
+    }
+    if ([string]::IsNullOrWhiteSpace($entryId)) { return $null }
+    return $entryId
+}
+
+function Split-NomadInboxRecipientText {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) { return @() }
+    return @($Value -split '[;,]' | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+function Add-NomadInboxOutlookRecipients {
+    param(
+        $MailItem,
+        [string]$Recipients,
+        [int]$Type
+    )
+
+    foreach ($recipientText in (Split-NomadInboxRecipientText $Recipients)) {
+        $recipient = $MailItem.Recipients.Add($recipientText)
+        $recipient.Type = $Type
+    }
+}
+
+function Set-NomadInboxOutlookDraftFields {
+    param(
+        $MailItem,
+        [string]$To,
+        [string]$Cc,
+        [string]$Bcc,
+        [string]$Subject,
+        [string]$Body,
+        [switch]$PrependBody
+    )
+
+    Add-NomadInboxOutlookRecipients -MailItem $MailItem -Recipients $To -Type 1
+    Add-NomadInboxOutlookRecipients -MailItem $MailItem -Recipients $Cc -Type 2
+    Add-NomadInboxOutlookRecipients -MailItem $MailItem -Recipients $Bcc -Type 3
+
+    if (-not [string]::IsNullOrWhiteSpace($Subject)) {
+        $MailItem.Subject = $Subject
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($Body)) {
+        if ($PrependBody) {
+            $MailItem.Body = "$Body`r`n`r`n$($MailItem.Body)"
+        } else {
+            $MailItem.Body = $Body
+        }
+    }
+}
+
+function Find-NomadInboxOutlookFolder {
+    param(
+        $Folder,
+        [string]$Name
+    )
+
+    if ($null -eq $Folder -or [string]::IsNullOrWhiteSpace($Name)) { return $null }
+    try {
+        if ([string]$Folder.Name -eq $Name) { return $Folder }
+        $children = $Folder.Folders
+        $count = [int]$children.Count
+        for ($i = 1; $i -le $count; $i++) {
+            $match = Find-NomadInboxOutlookFolder -Folder $children.Item($i) -Name $Name
+            if ($null -ne $match) { return $match }
+        }
+    } catch {
+    }
+    return $null
+}
+
+function Resolve-NomadInboxOutlookFolder {
+    param(
+        $Namespace,
+        [string]$FolderName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FolderName)) { return $null }
+
+    $roots = $Namespace.Folders
+    $rootCount = [int]$roots.Count
+    for ($i = 1; $i -le $rootCount; $i++) {
+        $root = $roots.Item($i)
+        $match = Find-NomadInboxOutlookFolder -Folder $root -Name $FolderName
+        if ($null -ne $match) { return $match }
+    }
+
+    return $null
+}
+
+function Resolve-NomadInboxOutlookArchiveFolder {
+    param($Namespace)
+
+    try {
+        $archive = $Namespace.GetDefaultFolder(35)
+        if ($null -ne $archive) { return $archive }
+    } catch {
+    }
+    return Resolve-NomadInboxOutlookFolder -Namespace $Namespace -FolderName "Archive"
+}
+
+function Save-NomadInboxOutlookDesktopAttachments {
+    param(
+        $Item,
+        [string]$ProviderMessageId,
+        [string]$AttachmentId,
+        [string]$OutputDir
+    )
+
+    $attachments = Get-NomadInboxComValue $Item "Attachments"
+    $count = Get-NomadInboxComValue $attachments "Count"
+    if ($null -eq $count -or [int]$count -le 0) {
+        return @()
+    }
+
+    $selected = @()
+    for ($i = 1; $i -le [int]$count; $i++) {
+        $attachment = $attachments.Item($i)
+        $fileName = [string](Get-NomadInboxComValue $attachment "FileName")
+        if ([string]::IsNullOrWhiteSpace($fileName)) {
+            $fileName = [string](Get-NomadInboxComValue $attachment "DisplayName")
+        }
+        if ([string]::IsNullOrWhiteSpace($fileName)) { $fileName = "attachment-$i.bin" }
+
+        $include = [string]::IsNullOrWhiteSpace($AttachmentId) -or $AttachmentId -eq [string]$i -or $AttachmentId -eq $fileName
+        if (-not $include) { continue }
+
+        $safeName = ConvertTo-NomadInboxSafeFileName $fileName
+        $baseDir = if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+            New-NomadInboxDirectory (Join-Path (Get-NomadInboxDataDir) "attachments")
+        } else {
+            New-NomadInboxDirectory $OutputDir
+        }
+        $messageHash = (ConvertTo-NomadInboxHash $ProviderMessageId).Substring(0, 16)
+        $path = Join-Path $baseDir "outlook-desktop-$messageHash-$i-$safeName"
+        $attachment.SaveAsFile($path)
+        $selected += [pscustomobject]@{
+            id = [string]$i
+            name = $fileName
+            localPath = $path
+        }
+    }
+
+    return $selected
+}
+
+function Get-NomadInboxOutlookDesktopActionType {
+    param([string]$Action)
+
+    switch ($Action) {
+        "draft-reply" { return "replyDraft" }
+        "draft-reply-all" { return "replyAllDraft" }
+        "draft-forward" { return "forwardDraft" }
+        "draft-new" { return "createDraft" }
+        "send-draft" { return "sendDraft" }
+        "mark-read" { return "markRead" }
+        "mark-unread" { return "markUnread" }
+        "flag" { return "flag" }
+        "unflag" { return "unflag" }
+        "move" { return "move" }
+        "archive" { return "archive" }
+        "save-attachment" { return "attach" }
+        "trash" { return "trash" }
+        "delete" { return "delete" }
+        default { throw "Unsupported Outlook Desktop action: $Action" }
+    }
+}
+
+function New-NomadInboxPendingConfirmationResult {
+    param(
+        [string]$Action,
+        [string]$MessageId,
+        [string]$DraftEntryId,
+        [string]$Requirement,
+        [string]$RequiredFlag,
+        [string]$RequiredPhrase
+    )
+
+    return [pscustomobject]@{
+        status = "pendingConfirmation"
+        service = $script:ServiceName
+        provider = "outlook-desktop"
+        action = $Action
+        id = if ([string]::IsNullOrWhiteSpace($MessageId)) { $null } else { $MessageId }
+        draftEntryId = if ([string]::IsNullOrWhiteSpace($DraftEntryId)) { $null } else { $DraftEntryId }
+        executed = $false
+        confirmationRequirement = $Requirement
+        requiredFlag = $RequiredFlag
+        requiredPhrase = $RequiredPhrase
+        message = "This Outlook Desktop action needs explicit user approval before NomadInbox will execute it."
+    }
+}
+
+function Invoke-NomadInboxOutlookDesktopMessageAction {
+    param(
+        [string]$Action,
+        [string]$Id,
+        [string]$ConversationId,
+        [switch]$LatestInThread,
+        [string]$To,
+        [string]$Cc,
+        [string]$Bcc,
+        [string]$Subject,
+        [string]$Body,
+        [string]$TargetFolder,
+        [string]$AttachmentId,
+        [string]$OutputDir,
+        [string]$DraftEntryId,
+        [switch]$OpenDraft,
+        [switch]$ConfirmAction,
+        [switch]$ConfirmSend,
+        [switch]$ConfirmDelete,
+        [string]$ConfirmFinal,
+        [switch]$DryRun
+    )
+
+    $normalizedAction = ([string]$Action).Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalizedAction)) { throw "Missing required option --action" }
+    $actionType = Get-NomadInboxOutlookDesktopActionType $normalizedAction
+    $requiresMessage = $normalizedAction -notin @("draft-new", "send-draft")
+    $requiresSingleConfirmation = $normalizedAction -in @("mark-read", "mark-unread", "flag", "unflag", "move", "archive", "save-attachment")
+    $requiresSendConfirmation = $normalizedAction -eq "send-draft"
+    $requiresDoubleConfirmation = $normalizedAction -in @("trash", "delete")
+
+    $target = $null
+    $entryId = $null
+    if ($requiresMessage) {
+        $target = Resolve-NomadInboxOutlookDesktopMessageTarget -Id $Id -ConversationId $ConversationId -LatestInThread:([bool]$LatestInThread)
+        if ($null -eq $target) {
+            return [pscustomobject]@{
+                status = "notFound"
+                service = $script:ServiceName
+                provider = "outlook-desktop"
+                action = $normalizedAction
+                id = if ([string]::IsNullOrWhiteSpace($Id)) { $null } else { $Id }
+                conversationId = if ([string]::IsNullOrWhiteSpace($ConversationId)) { $null } else { $ConversationId }
+                executed = $false
+                reason = "No live synced Outlook Desktop message matched the requested id or conversation."
+            }
+        }
+
+        $entryId = Resolve-NomadInboxOutlookDesktopEntryId $target
+        if ([string]::IsNullOrWhiteSpace($entryId)) {
+            return [pscustomobject]@{
+                status = "missingProviderMessageId"
+                service = $script:ServiceName
+                provider = "outlook-desktop"
+                action = $normalizedAction
+                id = $target.id
+                conversationId = $target.conversationId
+                executed = $false
+                reason = "The stored Outlook Desktop message has no EntryID/providerMessageId."
+            }
+        }
+    }
+
+    if ($requiresSendConfirmation -and [string]::IsNullOrWhiteSpace($DraftEntryId)) {
+        throw "send-draft requires --draft-entry-id"
+    }
+
+    if ($DryRun) {
+        return [pscustomobject]@{
+            status = "dryRun"
+            service = $script:ServiceName
+            provider = "outlook-desktop"
+            action = $normalizedAction
+            actionType = $actionType
+            id = if ($null -eq $target) { $null } else { $target.id }
+            draftEntryId = if ([string]::IsNullOrWhiteSpace($DraftEntryId)) { $null } else { $DraftEntryId }
+            providerMessageId = $entryId
+            conversationId = if ($null -eq $target) { $null } else { $target.conversationId }
+            subject = if ($null -eq $target) { $Subject } else { $target.subject }
+            targetFolder = if ([string]::IsNullOrWhiteSpace($TargetFolder)) { $null } else { $TargetFolder }
+            attachmentId = if ([string]::IsNullOrWhiteSpace($AttachmentId)) { $null } else { $AttachmentId }
+            executed = $false
+            message = "Dry run resolved the Outlook Desktop action without opening or mutating Outlook."
+        }
+    }
+
+    if ($requiresSingleConfirmation -and -not $ConfirmAction) {
+        return New-NomadInboxPendingConfirmationResult -Action $normalizedAction -MessageId $target.id -DraftEntryId $null -Requirement "single" -RequiredFlag "--confirm-action" -RequiredPhrase $null
+    }
+
+    if ($requiresSendConfirmation -and -not $ConfirmSend) {
+        return New-NomadInboxPendingConfirmationResult -Action $normalizedAction -MessageId $null -DraftEntryId $DraftEntryId -Requirement "single" -RequiredFlag "--confirm-send" -RequiredPhrase $null
+    }
+
+    if ($requiresDoubleConfirmation) {
+        $requiredPhrase = "$normalizedAction`:$($target.id)"
+        if (-not $ConfirmDelete -or $ConfirmFinal -ne $requiredPhrase) {
+            return New-NomadInboxPendingConfirmationResult -Action $normalizedAction -MessageId $target.id -DraftEntryId $null -Requirement "double" -RequiredFlag "--confirm-delete" -RequiredPhrase $requiredPhrase
+        }
+    }
+
+    if (-not $IsWindows -and $PSVersionTable.PSEdition -eq "Core") {
+        return [pscustomobject]@{
+            status = "unsupportedRuntime"
+            service = $script:ServiceName
+            provider = "outlook-desktop"
+            action = $normalizedAction
+            executed = $false
+            reason = "Outlook Desktop actions require Windows Outlook COM in the signed-in desktop session."
+        }
+    }
+
+    $inputObject = @{
+        provider = "outlook-desktop"
+        action = $normalizedAction
+        id = if ($null -eq $target) { $null } else { $target.id }
+        conversationId = if ($null -eq $target) { $null } else { $target.conversationId }
+        draftEntryId = if ([string]::IsNullOrWhiteSpace($DraftEntryId)) { $null } else { $DraftEntryId }
+    }
+
+    try {
+        $outlook = New-Object -ComObject Outlook.Application
+        $namespace = $outlook.GetNamespace("MAPI")
+        $item = $null
+        if ($requiresMessage) {
+            $item = $namespace.GetItemFromID($entryId)
+            if ($null -eq $item) {
+                return [pscustomobject]@{
+                    status = "notFoundInOutlook"
+                    service = $script:ServiceName
+                    provider = "outlook-desktop"
+                    action = $normalizedAction
+                    id = $target.id
+                    executed = $false
+                    reason = "Outlook did not return an item for the stored EntryID."
+                    fallback = "Run a fresh Outlook Desktop sync or use Outlook search terms from the message summary."
+                }
+            }
+        }
+
+        $result = [ordered]@{
+            status = "ok"
+            service = $script:ServiceName
+            provider = "outlook-desktop"
+            action = $normalizedAction
+            actionType = $actionType
+            id = if ($null -eq $target) { $null } else { $target.id }
+            conversationId = if ($null -eq $target) { $null } else { $target.conversationId }
+            subject = if ($null -eq $target) { $Subject } else { $target.subject }
+            executed = $true
+        }
+
+        switch ($normalizedAction) {
+            "draft-reply" {
+                $draft = $item.Reply()
+                Set-NomadInboxOutlookDraftFields -MailItem $draft -To "" -Cc $Cc -Bcc $Bcc -Subject $Subject -Body $Body -PrependBody
+                $draft.Save()
+                if ($OpenDraft) { $draft.Display() }
+                $result.draftEntryId = [string]$draft.EntryID
+                $result.opened = [bool]$OpenDraft
+                $result.message = "Created an Outlook Desktop reply draft. It was not sent."
+            }
+            "draft-reply-all" {
+                $draft = $item.ReplyAll()
+                Set-NomadInboxOutlookDraftFields -MailItem $draft -To "" -Cc $Cc -Bcc $Bcc -Subject $Subject -Body $Body -PrependBody
+                $draft.Save()
+                if ($OpenDraft) { $draft.Display() }
+                $result.draftEntryId = [string]$draft.EntryID
+                $result.opened = [bool]$OpenDraft
+                $result.message = "Created an Outlook Desktop reply-all draft. It was not sent."
+            }
+            "draft-forward" {
+                $draft = $item.Forward()
+                Set-NomadInboxOutlookDraftFields -MailItem $draft -To $To -Cc $Cc -Bcc $Bcc -Subject $Subject -Body $Body -PrependBody
+                $draft.Save()
+                if ($OpenDraft) { $draft.Display() }
+                $result.draftEntryId = [string]$draft.EntryID
+                $result.opened = [bool]$OpenDraft
+                $result.message = "Created an Outlook Desktop forward draft. It was not sent."
+            }
+            "draft-new" {
+                $draft = $outlook.CreateItem(0)
+                Set-NomadInboxOutlookDraftFields -MailItem $draft -To $To -Cc $Cc -Bcc $Bcc -Subject $Subject -Body $Body
+                $draft.Save()
+                if ($OpenDraft) { $draft.Display() }
+                $result.draftEntryId = [string]$draft.EntryID
+                $result.opened = [bool]$OpenDraft
+                $result.message = "Created an Outlook Desktop mail draft. It was not sent."
+            }
+            "send-draft" {
+                $draft = $namespace.GetItemFromID($DraftEntryId)
+                if ($null -eq $draft) { throw "Outlook did not return a draft for the provided EntryID." }
+                $result.subject = [string]$draft.Subject
+                $draft.Send()
+                $result.draftEntryId = $DraftEntryId
+                $result.message = "Sent the approved Outlook Desktop draft."
+            }
+            "mark-read" {
+                $item.UnRead = $false
+                $item.Save()
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ unread = $false } | Out-Null
+                $result.unread = $false
+                $result.message = "Marked the Outlook Desktop message as read."
+            }
+            "mark-unread" {
+                $item.UnRead = $true
+                $item.Save()
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ unread = $true } | Out-Null
+                $result.unread = $true
+                $result.message = "Marked the Outlook Desktop message as unread."
+            }
+            "flag" {
+                try {
+                    $item.MarkAsTask(0)
+                } catch {
+                    $item.FlagStatus = 2
+                }
+                $item.Save()
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ flagged = $true } | Out-Null
+                $result.flagged = $true
+                $result.message = "Flagged the Outlook Desktop message."
+            }
+            "unflag" {
+                try {
+                    $item.ClearTaskFlag()
+                } catch {
+                    $item.FlagStatus = 0
+                }
+                $item.Save()
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ flagged = $false } | Out-Null
+                $result.flagged = $false
+                $result.message = "Cleared the Outlook Desktop message flag."
+            }
+            "move" {
+                if ([string]::IsNullOrWhiteSpace($TargetFolder)) { throw "move requires --target-folder" }
+                $folder = Resolve-NomadInboxOutlookFolder -Namespace $namespace -FolderName $TargetFolder
+                if ($null -eq $folder) { throw "Outlook folder not found: $TargetFolder" }
+                $moved = $item.Move($folder)
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ folder = [string]$folder.Name } | Out-Null
+                $result.folder = [string]$folder.Name
+                $result.providerMessageId = if ($null -ne $moved -and $moved.EntryID) { [string]$moved.EntryID } else { $entryId }
+                $result.message = "Moved the Outlook Desktop message."
+            }
+            "archive" {
+                $folder = Resolve-NomadInboxOutlookArchiveFolder -Namespace $namespace
+                if ($null -eq $folder) { throw "Outlook Archive folder was not found." }
+                $moved = $item.Move($folder)
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ folder = [string]$folder.Name } | Out-Null
+                $result.folder = [string]$folder.Name
+                $result.providerMessageId = if ($null -ne $moved -and $moved.EntryID) { [string]$moved.EntryID } else { $entryId }
+                $result.message = "Archived the Outlook Desktop message."
+            }
+            "save-attachment" {
+                $saved = @(Save-NomadInboxOutlookDesktopAttachments -Item $item -ProviderMessageId $entryId -AttachmentId $AttachmentId -OutputDir $OutputDir)
+                if ($saved.Count -eq 0) { throw "No matching Outlook attachment was found to save." }
+                $result.savedAttachments = $saved
+                $result.message = "Saved Outlook Desktop attachment file(s) locally."
+            }
+            "trash" {
+                $folder = $namespace.GetDefaultFolder(3)
+                $moved = $item.Move($folder)
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ folder = [string]$folder.Name; actionable = $false } | Out-Null
+                $result.folder = [string]$folder.Name
+                $result.providerMessageId = if ($null -ne $moved -and $moved.EntryID) { [string]$moved.EntryID } else { $entryId }
+                $result.mailboxEffect = "movedToDeletedItems"
+                $result.message = "Moved the Outlook Desktop message to Deleted Items."
+            }
+            "delete" {
+                $folder = $namespace.GetDefaultFolder(3)
+                $moved = $item.Move($folder)
+                Update-NomadInboxLiveMessageRecord -Id $target.id -Updates @{ folder = [string]$folder.Name; actionable = $false } | Out-Null
+                $result.folder = [string]$folder.Name
+                $result.providerMessageId = if ($null -ne $moved -and $moved.EntryID) { [string]$moved.EntryID } else { $entryId }
+                $result.mailboxEffect = "movedToDeletedItems"
+                $result.message = "Moved the Outlook Desktop message to Deleted Items. Permanent delete is not a default NomadInbox action."
+            }
+        }
+
+        Write-NomadInboxActionRecord `
+            -ActionType $actionType `
+            -Status "success" `
+            -InputObject $inputObject `
+            -ResultObject @{ executed = $true; action = $normalizedAction } `
+            -ErrorMessage $null `
+            -MessageId $(if ($null -eq $target) { $null } else { [string]$target.id }) `
+            -DraftId $(if ($result.Contains("draftEntryId")) { [string]$result.draftEntryId } elseif (-not [string]::IsNullOrWhiteSpace($DraftEntryId)) { $DraftEntryId } else { $null }) `
+            -RequiresUserConfirmation:($requiresSingleConfirmation -or $requiresSendConfirmation -or $requiresDoubleConfirmation) `
+            -ConfirmedByUser:($requiresSingleConfirmation -or $requiresSendConfirmation -or $requiresDoubleConfirmation) `
+            -ConfirmationRequirement $(if ($requiresDoubleConfirmation) { "double" } elseif ($requiresSingleConfirmation -or $requiresSendConfirmation) { "single" } else { "none" }) | Out-Null
+
+        return [pscustomobject]$result
+    } catch {
+        Write-NomadInboxActionRecord `
+            -ActionType $actionType `
+            -Status "error" `
+            -InputObject $inputObject `
+            -ResultObject @{ executed = $false; action = $normalizedAction } `
+            -ErrorMessage ([string]$_.Exception.Message) `
+            -MessageId $(if ($null -eq $target) { $null } else { [string]$target.id }) `
+            -DraftId $(if ([string]::IsNullOrWhiteSpace($DraftEntryId)) { $null } else { $DraftEntryId }) `
+            -RequiresUserConfirmation:($requiresSingleConfirmation -or $requiresSendConfirmation -or $requiresDoubleConfirmation) `
+            -ConfirmedByUser:($requiresSingleConfirmation -or $requiresSendConfirmation -or $requiresDoubleConfirmation) `
+            -ConfirmationRequirement $(if ($requiresDoubleConfirmation) { "double" } elseif ($requiresSingleConfirmation -or $requiresSendConfirmation) { "single" } else { "none" }) | Out-Null
+
+        return [pscustomobject]@{
+            status = "error"
+            service = $script:ServiceName
+            provider = "outlook-desktop"
+            action = $normalizedAction
+            id = if ($null -eq $target) { $null } else { $target.id }
+            executed = $false
+            error = [string]$_.Exception.Message
+            fallback = "Run a fresh sync, verify Outlook is open in the signed-in desktop session, or open the message in Outlook before retrying."
+        }
+    }
 }
 
 function Get-NomadInboxComValue {
@@ -956,7 +1664,7 @@ function ConvertFrom-NomadInboxGraphMessage {
         -Importance ([string]$Message.importance) `
         -Categories @($Message.categories) `
         -Attachments @($Attachments) `
-        -Capabilities @("reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment") `
+        -Capabilities @("openInClient", "reply", "replyAll", "forward", "markRead", "markUnread", "flag", "unflag", "move", "archive", "trash", "saveAttachment") `
         -ProviderRawRef $ProviderRawRef `
         -RawCaptured $RawCaptured
 }
@@ -1648,6 +2356,7 @@ function Test-NomadInbox {
         "README.md",
         "schemas\message.v1.json",
         "schemas\provider-raw.v1.json",
+        "schemas\agent-event.v1.json",
         "schemas\action.v1.json",
         "config\nomad-inbox.example.ps1",
         "config\accounts.example.json",
@@ -1678,6 +2387,7 @@ function Get-NomadInboxSchemas {
         schemas = @(
             [pscustomobject]@{ name = "message.v1"; path = Join-Path $root "schemas\message.v1.json" },
             [pscustomobject]@{ name = "provider-raw.v1"; path = Join-Path $root "schemas\provider-raw.v1.json" },
+            [pscustomobject]@{ name = "agent-event.v1"; path = Join-Path $root "schemas\agent-event.v1.json" },
             [pscustomobject]@{ name = "action.v1"; path = Join-Path $root "schemas\action.v1.json" }
         )
     }
@@ -1717,4 +2427,5 @@ Export-ModuleMember -Function `
     Read-NomadInboxSyncStatus, Test-NomadInboxWorkerRunning, Get-NomadInboxWorkerLogPath, `
     Import-NomadInboxArchive, Read-NomadInboxImportStatus, Get-NomadInboxBackupStatus, `
     ConvertTo-NomadInboxOptions, Get-NomadInboxOption, Require-NomadInboxOption, `
-    Get-NomadInboxTimeContext, ConvertTo-NomadInboxLocalTimeText
+    Get-NomadInboxTimeContext, ConvertTo-NomadInboxLocalTimeText, Open-NomadInboxOutlookDesktopMessage, `
+    Invoke-NomadInboxOutlookDesktopMessageAction

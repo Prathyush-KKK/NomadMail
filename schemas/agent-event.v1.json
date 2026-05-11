@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nomadinbox.local/schemas/agent-event.v1.json",
+  "title": "NomadMail Agent Automation Event",
+  "type": "object",
+  "required": ["schemaVersion", "eventId", "status", "eventType", "assignedAgent", "createdAt", "summary"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "acknowledged"]
+    },
+    "eventType": {
+      "type": "string",
+      "examples": ["unread_mail_review", "recent_mail_review", "sync_attention"]
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["low", "normal", "high"]
+    },
+    "assignedAgent": {
+      "type": "string",
+      "description": "Local agent label expected to consume the event, such as codex, claude-code, or kiro."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "createdAtLocal": {
+      "type": ["string", "null"]
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "acknowledgedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "acknowledgedBy": {
+      "type": ["string", "null"]
+    },
+    "source": {
+      "type": "string"
+    },
+    "accountId": {
+      "type": ["string", "null"]
+    },
+    "provider": {
+      "type": ["string", "null"]
+    },
+    "summary": {
+      "type": "string",
+      "description": "Short local summary. Do not rely on this as approval to fetch full bodies or mutate mail."
+    },
+    "messageRefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "provider": { "type": ["string", "null"] },
+          "accountId": { "type": ["string", "null"] },
+          "sourceType": { "type": ["string", "null"] },
+          "folder": { "type": ["string", "null"] },
+          "subject": { "type": ["string", "null"] },
+          "from": { "type": ["object", "null"] },
+          "receivedAt": { "type": ["string", "null"] },
+          "receivedAtLocal": { "type": ["string", "null"] },
+          "unread": { "type": "boolean" },
+          "flagged": { "type": "boolean" },
+          "attachmentCount": { "type": "integer" },
+          "actionable": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "actionHint": {
+      "type": "string"
+    },
+    "dedupeKey": {
+      "type": ["string", "null"]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -11,7 +11,7 @@ Executable source of truth:
 For cross-agent execution instructions and reporting format, see
 [Testing Handoff](testing-handoff.md).
 
-The synthetic test uses a temporary `NOMADINBOX_DATA_DIR`, a temporary HTTP port, and one generated EML message. The approved live validation uses the configured local Outlook Desktop account and does not send, delete, move, archive, save attachments, enable body storage, or enable auto sync.
+The synthetic test uses a temporary `NOMADINBOX_DATA_DIR`, a temporary HTTP port, and one generated EML message. The approved live validation uses the configured local Outlook Desktop account and does not send, delete, move, archive, save attachments, enable body storage, or enable auto sync unless the exact action is explicitly approved.
 
 ## Scenario Coverage Summary
 
@@ -21,11 +21,12 @@ The synthetic test uses a temporary `NOMADINBOX_DATA_DIR`, a temporary HTTP port
 | Source and scope approval | Synthetic | User chooses a source/scope such as Outlook Desktop inbox, Gmail headers, Outlook Graph headers, or local export import. | Agent confirms source/scope, says what will be stored locally, states no send/delete/move/attachment save, and asks before proceeding. | Test confirms output includes `I will set up <source> for <scope>` and `I will not send, delete, move, or save attachments`. |
 | First sync or import | Synthetic | Generated EML file, `import eml --dry-run`, then approved `import eml`. | Dry run reports one message; write import stores one read-only archive message; auto sync remains off. | Dry run returned `status=dryRun`, `importedMessages=1`; import returned `status=ok`, `importedMessages=1`, `actionable=false`. |
 | Service and tray setup | Synthetic and live | User asks to install/start/run service. On Windows, agent starts or verifies compiled tray. | User is told NomadMail is available from the NomadInbox system tray; no endpoint catalog or raw JSON dump; auto sync remains off. | Synthetic contract passed. Live run returned `tray=started`, `trayClient=compiled`, with message telling user NomadMail is available from tray. |
-| Daily mail query choices | Synthetic | At least one source is synced/imported, or user asks what to do next. | Agent offers choices: latest email with content, unread today/week, needs-action, search by project/sender/date/attachment, low-priority mail, and draft actions. | Test confirms the flow doc contains `Show my latest email with content`, `Summarize unread mail from today`, `Find mail that needs my action`, and `Draft a reply or new email`. |
+| Daily mail query choices | Synthetic | At least one source is synced/imported, or user asks what to do next. | Agent offers choices: latest email with content, unread today/week, needs-action, search by project/sender/date/attachment, low-priority mail, draft actions, and Outlook Desktop open/navigation when supported. | Test confirms the flow doc contains `Show my latest email with content`, `Summarize unread mail from today`, `Find mail that needs my action`, `Draft a reply or new email`, and `Open a selected Outlook Desktop message or thread in Outlook`. |
 | Latest email freshness | Synthetic and live | User asks for latest/recent/newest email. | Agent runs one request-scoped live sync first for enabled live accounts; if sync cannot complete, it says latest email cannot be confirmed. | Synthetic diagnostic check preserved freshness guidance. Live `/messages/latest` ran sync-first and returned `status=ok`, `contentAvailable=true`, `provider=outlook-desktop`, `sourceType=live-sync`. |
 | Broad daily digest or range report | Synthetic | User asks for today, weekly unread, project mail, or a broad range. | Agent resolves absolute local date range, groups messages, saves range-aware report under ignored `runtime/agent-scratch/`, and asks which group to open. | Test confirms output contract includes `runtime/agent-scratch`, source/date range naming, and `Which group should I open first?`. |
-| Mail action follow-up | Synthetic and live | User selects a message and asks to reply, forward, send, move, archive, mark, flag, trash, or delete. | Agent verifies live/actionable status, drafts before send, asks exact send approval, and requires double confirmation for trash/delete. | Synthetic test confirms draft/send/delete wording. Live `/message-actions` returned `actionable=true`, primary actions `Draft reply`, `Draft reply all`, and `Draft new mail`, plus delete approval requiring two confirmations. |
+| Mail action follow-up | Synthetic and live | User selects a message and asks to open it, go to the thread, reply, forward, send, move, archive, mark, flag, trash, or delete. | Agent verifies live/actionable status, opens Outlook Desktop messages by EntryID when supported, uses `nomadmail_execute_message_action` for approved Outlook Desktop actions, drafts before send, asks exact send approval, and requires double confirmation for trash/delete. | Synthetic test confirms draft/send/delete wording, dry-run Outlook open resolution, dry-run action execution, and confirmation gates. Live `/message-actions` returned `actionable=true`, primary actions `Draft reply`, `Draft reply all`, and `Draft new mail`, plus delete approval requiring two confirmations. |
 | Archive read-only action boundary | Synthetic | Search imported archive message. | Imported message can be summarized or used to find matching live message; mailbox mutations are blocked. | Search returned one archive result with `sourceType=archive-import`, `actionMenu.available=false`, and quick actions including summarize/find matching live message. |
+| Assigned-agent automation | Synthetic | Queue Codex events from a synthetic live message, list pending events, then acknowledge one event. | Event queue stores bounded local references under ignored runtime data; Codex can pull and acknowledge events; event does not authorize mailbox mutation. | HTTP automation cycle created one `codex` event, listing returned the synthetic live message reference, and acknowledgement changed status to `acknowledged`. |
 | Agent user flow service surface | Synthetic and live | Agent calls `nomadmail_get_agent_user_flow`, CLI `agent-user-flow`, HTTP `/agent-user-flow`, or `agent-guide`. | Flow is retrievable by agents and embedded in the guide. | Tool exists, CLI output includes Flow 1 and Flow 5, HTTP `/agent-user-flow` returned `ok`, and `/agent-guide` embedded the flow. |
 | Git/privacy boundary | Live | After live sync/search/latest-email checks. | Runtime data and local account config stay ignored by git. | `git check-ignore` confirmed `data/`, `data/messages.jsonl`, `data/provider-raw.jsonl`, `data/sync-status.json`, `config/accounts.json`, and `runtime/agent-scratch` are ignored. |
 
@@ -69,6 +70,9 @@ Validated command/API inputs:
 | Archive action menu | selected imported message | `sourceType=archive-import`, `actionMenu.available=false`, quick actions include summarize and find matching live message. |
 | Message action guide | `GET /message-actions?id=<archive-message-id>` | JSON `status=ok`, `actionGuide.actionable=false`, prompt offers summarize or find matching live message. |
 | Latest diagnostic read | `POST /messages/latest` with `syncFirst=false`, `requireContent=true` | JSON preserves freshness rule and does not present stale data as latest. |
+| Agent automation cycle | `POST /agent-events/automation-cycle` with `assignedAgent=codex` after writing one synthetic live message | JSON `status=ok`, `createdCount=1`, safety text says events do not imply approval. |
+| Agent event listing | `GET /agent-events?assignedAgent=codex&status=pending` | JSON `status=ok`, one pending event references the synthetic live message id. |
+| Agent event acknowledgement | `POST /agent-events/<event-id>/ack` | JSON `status=ok`, event status becomes `acknowledged`. |
 | Self-test | `node service/nomadmail-service.mjs self-test` | JSON `status=ok`, `agentUserFlowStatus=ok`. |
 
 Observed synthetic test output:
@@ -91,7 +95,8 @@ Observed synthetic test output:
     "daily mail query choices",
     "latest email freshness",
     "broad daily digest or range report",
-    "mail action follow-up"
+    "mail action follow-up",
+    "assigned-agent automation"
   ]
 }
 ```
@@ -103,7 +108,7 @@ Live validation was approved by the user and run against the configured local Ou
 Approved live boundaries:
 
 - allowed: tray start, read-only service checks, one-shot Outlook Desktop sync, search, latest-email lookup, action-guidance lookup
-- not allowed/performed: send, delete, move, archive, mark read/unread, save attachments, enable full body storage, enable auto sync
+- not allowed/performed without approval: send, delete/trash, move, archive, mark read/unread, save attachments, enable full body storage, enable auto sync
 
 Live account input:
 

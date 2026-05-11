@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { createReadStream, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -89,6 +90,87 @@ const tools = [
     inputSchema: {
       type: "object",
       properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_run_agent_automation_cycle",
+    description: "Create pending local agent events from the current NomadInbox message store, optionally after a one-shot sync. This only queues bounded review events; it never sends, deletes, moves, archives, or marks mail.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        assignedAgent: {
+          type: "string",
+          default: "codex",
+          description: "Agent label that should consume these events, such as codex, claude-code, kiro, or local-agent.",
+        },
+        accountId: {
+          type: "string",
+          description: "Optional configured account id to sync before scanning.",
+        },
+        syncFirst: {
+          type: "boolean",
+          default: false,
+          description: "Run a one-shot sync against already enabled accounts before creating events.",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 50,
+          default: 10,
+          description: "Maximum live messages to inspect for new events.",
+        },
+        onlyUnread: {
+          type: "boolean",
+          default: false,
+          description: "When true, only unread live messages create events.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_list_agent_events",
+    description: "List pending or acknowledged local NomadMail automation events for an assigned agent. Events contain bounded message references, not full mailbox bodies.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        assignedAgent: {
+          type: "string",
+          description: "Optional assigned-agent filter, such as codex, claude-code, or kiro.",
+        },
+        status: {
+          type: "string",
+          enum: ["pending", "acknowledged", "all"],
+          default: "pending",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 200,
+          default: 20,
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_ack_agent_event",
+    description: "Acknowledge one local NomadMail automation event after an assigned agent has seen or handled it. This does not mutate mail.",
+    inputSchema: {
+      type: "object",
+      required: ["eventId"],
+      properties: {
+        eventId: {
+          type: "string",
+          description: "Event id returned by nomadmail_list_agent_events.",
+        },
+        acknowledgedBy: {
+          type: "string",
+          default: "agent",
+          description: "Agent or user label acknowledging the event.",
+        },
+      },
       additionalProperties: false,
     },
   },
@@ -259,6 +341,125 @@ const tools = [
     },
   },
   {
+    name: "nomadmail_open_message",
+    description: "Open a locally synced Outlook Desktop message or the newest message in a synced Outlook conversation by using the preserved Outlook EntryID. This is navigation only; it does not send, delete, move, or mutate mail.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Optional NomadMail message id from search/latest results.",
+        },
+        conversationId: {
+          type: "string",
+          description: "Optional Outlook conversation id or NomadMail thread key. Used when id is not provided.",
+        },
+        latestInThread: {
+          type: "boolean",
+          default: true,
+          description: "When opening by conversation id, open the newest synced item in that conversation.",
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description: "Resolve the Outlook EntryID target without opening Outlook. Intended for tests and diagnostics.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "nomadmail_execute_message_action",
+    description: "Execute a permission-gated Outlook Desktop message action. Draft creation is draft-only; send requires confirmSend; mark/flag/move/archive/save attachment require confirmAction; trash/delete require confirmDelete and confirmFinal.",
+    inputSchema: {
+      type: "object",
+      required: ["action"],
+      properties: {
+        action: {
+          type: "string",
+          enum: ["draft-reply", "draft-reply-all", "draft-forward", "draft-new", "send-draft", "mark-read", "mark-unread", "flag", "unflag", "move", "archive", "save-attachment", "trash", "delete"],
+          description: "Outlook Desktop action to perform. Permanent delete is not a default operation; delete moves to Deleted Items.",
+        },
+        id: {
+          type: "string",
+          description: "NomadMail message id for message-scoped actions.",
+        },
+        conversationId: {
+          type: "string",
+          description: "Outlook conversation id. Used when id is not provided.",
+        },
+        latestInThread: {
+          type: "boolean",
+          default: true,
+          description: "When using conversationId, target the newest synced item in the thread.",
+        },
+        to: {
+          type: "string",
+          description: "Semicolon- or comma-separated recipients for draft-new or draft-forward.",
+        },
+        cc: {
+          type: "string",
+        },
+        bcc: {
+          type: "string",
+        },
+        subject: {
+          type: "string",
+        },
+        body: {
+          type: "string",
+          description: "Plain-text body to place in a draft. Reply and forward drafts prepend this above the quoted original.",
+        },
+        targetFolder: {
+          type: "string",
+          description: "Outlook folder display name for move.",
+        },
+        attachmentId: {
+          type: "string",
+          description: "Optional 1-based Outlook attachment index or attachment filename. Omit to save all attachments.",
+        },
+        outputDir: {
+          type: "string",
+          description: "Optional local directory for saved attachments. Defaults to NomadInbox data/attachments.",
+        },
+        draftEntryId: {
+          type: "string",
+          description: "Outlook draft EntryID for send-draft.",
+        },
+        openDraft: {
+          type: "boolean",
+          default: false,
+          description: "Open the saved draft in Outlook after creating it.",
+        },
+        confirmAction: {
+          type: "boolean",
+          default: false,
+          description: "Required for mark read/unread, flag/unflag, move/archive, and save-attachment.",
+        },
+        confirmSend: {
+          type: "boolean",
+          default: false,
+          description: "Required for send-draft after the user approves the exact draft.",
+        },
+        confirmDelete: {
+          type: "boolean",
+          default: false,
+          description: "First required approval for trash/delete.",
+        },
+        confirmFinal: {
+          type: "string",
+          description: "Second required approval phrase for trash/delete. Use the pendingConfirmation.requiredPhrase value, such as trash:<message-id>.",
+        },
+        dryRun: {
+          type: "boolean",
+          default: false,
+          description: "Resolve and validate the action without opening, drafting, sending, saving, or mutating Outlook.",
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "nomadmail_get_backup_status",
     description: "Report how much live and imported email context is locally available.",
     inputSchema: {
@@ -407,15 +608,23 @@ function agentGuide() {
       "If the user explicitly asks to install, start, or run the service on Windows, start the compiled tray client instead of starting only the raw HTTP server. The tray owns the long-running local HTTP agent service and its popup/menu must not block on sync/status refresh.",
       "Starting the tray is allowed only after user approval and must not turn on auto sync by itself.",
       "After service or tray setup succeeds, keep the response short: tell the user NomadMail is available from the NomadInbox system tray and agents can use the local service. Do not print endpoint lists, raw health JSON, process tables, or search results unless diagnostics were requested.",
+      "For assigned-agent automation, use nomadmail_run_agent_automation_cycle to create bounded local events, nomadmail_list_agent_events to let the assigned agent pull them, and nomadmail_ack_agent_event after the agent has handled them. Events are prompts to review mail, not approval to mutate mail.",
       "On non-Windows, do not install the Windows helper or offer Outlook Desktop sync. Explain that the NomadMail MCP server is still Node-based and can expose local JSONL context tools, while live sync requires PowerShell Core plus a supported provider runtime or a future native provider adapter.",
       "Never discover tokens, profiles, exports, connected accounts, or mailbox contents until the user approves the exact source and scope."
     ],
     mcpPortability: {
       serverRuntime: "Node.js MCP/HTTP service intended to start on any OS with Node.js.",
-      platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_get_cross_chat_handoff", "nomadmail_search_messages", "nomadmail_get_message", "nomadmail_get_message_actions"],
-      hostRuntimeTools: ["nomadmail_health_check", "nomadmail_list_providers", "nomadmail_list_accounts", "nomadmail_sync_once", "nomadmail_get_latest_message", "nomadmail_get_backup_status", "nomadmail_get_service_status", "nomadmail_start_service", "nomadmail_stop_service", "nomadmail_import_archive"],
+      platformIndependentTools: ["nomadmail_get_agent_guide", "nomadmail_get_cross_chat_handoff", "nomadmail_search_messages", "nomadmail_get_message", "nomadmail_get_message_actions", "nomadmail_list_agent_events", "nomadmail_ack_agent_event"],
+      hostRuntimeTools: ["nomadmail_health_check", "nomadmail_list_providers", "nomadmail_list_accounts", "nomadmail_sync_once", "nomadmail_get_latest_message", "nomadmail_open_message", "nomadmail_execute_message_action", "nomadmail_get_backup_status", "nomadmail_get_service_status", "nomadmail_start_service", "nomadmail_stop_service", "nomadmail_import_archive"],
       hostRuntimeRequirement: "Provider sync and archive import currently delegate to the NomadInbox PowerShell core. Windows uses Windows PowerShell by default; non-Windows hosts need pwsh or a future native adapter.",
       windowsOnlyCapabilities: ["Outlook Desktop COM sync", "compiled system tray client", "Windows PowerShell helper install"]
+    },
+    agentAutomation: {
+      rule: "NomadInbox can queue local events for an assigned agent, but agents consume them by MCP/HTTP polling or platform hooks. A queued event is not user approval for mailbox actions.",
+      eventStore: agentEventsPath(),
+      codexPattern: "Register NomadMail as a local Codex MCP server, then ask Codex to call nomadmail_list_agent_events assignedAgent=codex at session start or when the user asks for pending mail automation.",
+      eventTools: ["nomadmail_run_agent_automation_cycle", "nomadmail_list_agent_events", "nomadmail_ack_agent_event"],
+      privacyBoundary: "Events store bounded local references and short summaries. Agents should fetch full message details only when the user asks or the event workflow requires it."
     },
     storageBoundary: {
       defaultDataDir: join(repoRoot, "data"),
@@ -461,6 +670,8 @@ function agentGuide() {
       "Use nomadmail_list_accounts before syncing and verify that only intended accounts are enabled.",
       "For latest-email questions, call nomadmail_get_latest_message with syncFirst=true, or run nomadmail_sync_once before searching live messages. If sync is blocked by disabled accounts, missing auth, or provider failure, say the latest email cannot be confirmed instead of presenting stale local data as definite.",
       "After a message is discovered, show a short action menu instead of stopping at search results. Use nomadmail_get_message_actions for reply, reply all, forward, draft new mail, mark/flag/move/archive/trash options and their permission gates.",
+      "Use nomadmail_execute_message_action only after the selected Outlook Desktop action is approved. Draft actions create drafts only; send-draft needs confirmSend; ordinary state/file actions need confirmAction; trash/delete needs confirmDelete plus confirmFinal.",
+      "When the user wants to go to a specific Outlook Desktop mail thread, prefer nomadmail_open_message with the selected message id or conversationId. It uses the preserved Outlook EntryID and only opens the item; it does not mutate the mailbox.",
       "Use nomadmail_sync_once for request-driven sync, or nomadmail_start_service only when the user explicitly wants background sync.",
       "Gmail API sync requires NOMADINBOX_GMAIL_ACCESS_TOKEN or a Gmail-scoped gcloud login.",
       "Outlook Graph sync requires NOMADINBOX_GRAPH_ACCESS_TOKEN or an Azure CLI Microsoft Graph token.",
@@ -513,6 +724,18 @@ function archiveMessagesPath() {
 
 function archiveIndexPath() {
   return join(dataDir(), "archive-index.jsonl");
+}
+
+function agentEventsPath() {
+  return join(dataDir(), "agent-events.jsonl");
+}
+
+function ensureDataDir() {
+  mkdirSync(dataDir(), { recursive: true });
+}
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
 function runtimeInfo() {
@@ -832,12 +1055,22 @@ function normalizeAttachmentList(record) {
 
 function normalizeCapabilities(record, sourceType) {
   if (Array.isArray(record.capabilities) && record.capabilities.length > 0) {
+    if (record.provider === "outlook-desktop" && !record.capabilities.includes("openInClient")) {
+      return ["openInClient", ...record.capabilities];
+    }
     return record.capabilities;
   }
   if (record.actionable === false || record.provider === "archive-import" || sourceType === "archive-import") {
     return [];
   }
   const base = ["reply", "replyAll", "forward", "markRead", "markUnread", "move", "archive", "trash"];
+  if (record.provider === "outlook-desktop") {
+    const outlookBase = ["openInClient", ...base, "flag", "unflag"];
+    if (normalizeAttachmentList(record).length > 0) {
+      return [...outlookBase, "saveAttachment"];
+    }
+    return outlookBase;
+  }
   if (record.provider === "gmail-api") {
     return ["reply", "replyAll", "forward", "markRead", "markUnread", "star", "archive", "trash"];
   }
@@ -989,6 +1222,7 @@ function compactMailActionMenu(record, sourceType) {
   }
 
   const quickActions = [];
+  if (capabilities.includes("openInClient")) quickActions.push("open in Outlook");
   if (capabilities.includes("reply")) quickActions.push("draft reply");
   if (capabilities.includes("replyAll")) quickActions.push("draft reply all");
   if (capabilities.includes("forward")) quickActions.push("draft forward");
@@ -997,6 +1231,7 @@ function compactMailActionMenu(record, sourceType) {
   if (capabilities.includes("flag") || capabilities.includes("unflag") || capabilities.includes("star")) quickActions.push("flag/star");
   if (capabilities.includes("move")) quickActions.push("move");
   if (capabilities.includes("archive")) quickActions.push("archive");
+  if (capabilities.includes("saveAttachment")) quickActions.push("save attachment");
   if (capabilities.includes("trash")) quickActions.push("trash/delete with double confirmation");
 
   return {
@@ -1027,9 +1262,15 @@ function mailActionGuide(record) {
     sourceType,
     capabilities,
     userPrompt: actionable
-      ? "What would you like to do with this email: draft reply, reply all, forward, draft new mail, mark read/unread, flag, move/archive, or trash?"
+      ? "What would you like to do with this email: open it in Outlook, draft reply, reply all, forward, draft new mail, mark read/unread, flag, move/archive, or trash?"
       : "This message is not currently actionable. I can summarize it or help locate the matching live message before any mailbox action.",
     primaryActions: [
+      {
+        id: "openInClient",
+        label: "Open in Outlook",
+        enabledWhen: "live Outlook Desktop message with preserved EntryID",
+        steps: ["Use nomadmail_open_message with the selected message id or conversation id.", "Open the item in the signed-in Outlook Desktop session."],
+      },
       {
         id: "replyDraft",
         label: "Draft reply",
@@ -1043,6 +1284,12 @@ function mailActionGuide(record) {
         steps: ["Confirm reply-all is intended.", "Create or present a draft.", "Send only after explicit approval."],
       },
       {
+        id: "forwardDraft",
+        label: "Draft forward",
+        enabledWhen: "live message with forward capability",
+        steps: ["Collect forward recipients and optional message.", "Create or present a draft.", "Send only after explicit approval."],
+      },
+      {
         id: "composeDraft",
         label: "Draft new mail",
         enabledWhen: "connected account supports draft creation",
@@ -1053,12 +1300,13 @@ function mailActionGuide(record) {
       { id: "markRead", label: "Mark read/unread", confirmation: "explicit approval required" },
       { id: "flag", label: "Flag/star", confirmation: "explicit approval required" },
       { id: "move", label: "Move/archive", confirmation: "explicit approval required" },
+      { id: "saveAttachment", label: "Save attachment", confirmation: "explicit approval required" },
       { id: "trash", label: "Trash/delete", confirmation: "double explicit approval required" },
     ],
     permissionModel,
     liveActionPreconditions,
     providerCaveat: provider ? providerActionCaveat(provider) : "Provider-specific action support must be checked after a live message is selected.",
-    implementationNote: "NomadMail currently exposes the action guide and local discovery context. Mutation tools must still be added behind this permission model before agents can execute them through MCP/HTTP.",
+    implementationNote: "NomadMail can open synced Outlook Desktop messages and execute Outlook Desktop draft, send-draft, mark, flag, move, archive, attachment-save, and trash/delete actions through preserved EntryIDs. Drafts are saved before send, send requires explicit approval, and trash/delete requires double explicit approval.",
   };
 }
 
@@ -1109,6 +1357,206 @@ async function* readJsonLines(path) {
       };
     }
   }
+}
+
+function writeJsonLines(path, records) {
+  ensureDataDir();
+  const body = records.map((record) => JSON.stringify(record)).join("\n");
+  writeFileSync(path, body.length > 0 ? `${body}\n` : "", "utf8");
+}
+
+function appendJsonLine(path, record) {
+  ensureDataDir();
+  appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+function sanitizeAgentLabel(value, fallback = "codex") {
+  const text = String(value || "").trim().toLowerCase();
+  return text.replace(/[^a-z0-9_.-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || fallback;
+}
+
+function sanitizeEventStatus(value) {
+  const status = String(value || "pending").trim().toLowerCase();
+  return ["pending", "acknowledged", "all"].includes(status) ? status : "pending";
+}
+
+function summarizeEventMessage(record) {
+  const normalized = normalizeMessageRecord(record, record.sourceType || "live-sync");
+  return {
+    id: normalized.id,
+    provider: normalized.provider,
+    accountId: normalized.accountId || null,
+    sourceType: normalized.sourceType || "live-sync",
+    folder: normalized.folder || null,
+    subject: normalized.subject || "(no subject)",
+    from: normalized.from || null,
+    receivedAt: normalized.receivedAt || null,
+    receivedAtLocal: formatLocalTime(normalized.receivedAt || normalized.sentAt || ""),
+    unread: Boolean(normalized.unread),
+    flagged: Boolean(normalized.flagged),
+    attachmentCount: normalized.attachments.length,
+    actionable: normalized.actionable !== false,
+  };
+}
+
+function normalizeAgentEvent(record) {
+  const createdAt = record.createdAt || nowIso();
+  return {
+    schemaVersion: record.schemaVersion || 1,
+    eventId: record.eventId || randomUUID(),
+    status: record.status || "pending",
+    eventType: record.eventType || "mail_review",
+    priority: record.priority || "normal",
+    assignedAgent: sanitizeAgentLabel(record.assignedAgent || "codex"),
+    createdAt,
+    createdAtLocal: formatLocalTime(createdAt),
+    updatedAt: record.updatedAt || createdAt,
+    acknowledgedAt: record.acknowledgedAt || null,
+    acknowledgedBy: record.acknowledgedBy || null,
+    source: record.source || "nomadmail",
+    accountId: record.accountId || null,
+    provider: record.provider || null,
+    summary: record.summary || "NomadMail event requires review.",
+    messageRefs: Array.isArray(record.messageRefs) ? record.messageRefs : [],
+    actionHint: record.actionHint || "Open the referenced message through NomadMail before taking action.",
+    dedupeKey: record.dedupeKey || null,
+    metadata: record.metadata && typeof record.metadata === "object" ? record.metadata : {},
+  };
+}
+
+async function readAllAgentEvents() {
+  const events = [];
+  for await (const record of readJsonLines(agentEventsPath())) {
+    events.push(normalizeAgentEvent(record));
+  }
+  return events.sort((a, b) => Date.parse(b.createdAt || "") - Date.parse(a.createdAt || ""));
+}
+
+async function listAgentEvents(args = {}) {
+  const assignedAgent = args.assignedAgent ? sanitizeAgentLabel(args.assignedAgent) : "";
+  const status = sanitizeEventStatus(args.status);
+  const limit = Math.max(1, Math.min(200, Number.parseInt(args.limit || "20", 10) || 20));
+  const events = (await readAllAgentEvents())
+    .filter((event) => !assignedAgent || event.assignedAgent === assignedAgent)
+    .filter((event) => status === "all" || event.status === status)
+    .slice(0, limit);
+
+  return {
+    status: "ok",
+    service: "NomadMail",
+    assignedAgent: assignedAgent || null,
+    eventStatus: status,
+    count: events.length,
+    events,
+    eventsPath: agentEventsPath(),
+    usage: "Codex, Claude Code, Kiro, or another assigned agent should list pending events, fetch referenced mail through NomadMail tools only when needed, then acknowledge handled events.",
+  };
+}
+
+async function ackAgentEvent(args = {}) {
+  const eventId = String(args.eventId || "").trim();
+  if (!eventId) {
+    throw new Error("eventId is required");
+  }
+  const acknowledgedBy = sanitizeAgentLabel(args.acknowledgedBy || "agent", "agent");
+  const events = await readAllAgentEvents();
+  let updated = null;
+  const updatedEvents = events.map((event) => {
+    if (event.eventId !== eventId) {
+      return event;
+    }
+    updated = {
+      ...event,
+      status: "acknowledged",
+      acknowledgedAt: nowIso(),
+      acknowledgedBy,
+      updatedAt: nowIso(),
+    };
+    return updated;
+  });
+
+  if (!updated) {
+    return {
+      status: "notFound",
+      service: "NomadMail",
+      eventId,
+      message: "No matching local agent event was found.",
+    };
+  }
+
+  writeJsonLines(agentEventsPath(), updatedEvents.sort((a, b) => Date.parse(a.createdAt || "") - Date.parse(b.createdAt || "")));
+  return {
+    status: "ok",
+    service: "NomadMail",
+    event: normalizeAgentEvent(updated),
+  };
+}
+
+async function runAgentAutomationCycle(args = {}) {
+  const assignedAgent = sanitizeAgentLabel(args.assignedAgent || "codex");
+  const limit = Math.max(1, Math.min(50, Number.parseInt(args.limit || "10", 10) || 10));
+  const onlyUnread = Boolean(args.onlyUnread);
+  const syncFirst = Boolean(args.syncFirst);
+  const sync = syncFirst ? await syncOnce({ accountId: args.accountId || "" }) : null;
+
+  const existingEvents = await readAllAgentEvents();
+  const existingDedupeKeys = new Set(existingEvents.map((event) => event.dedupeKey).filter(Boolean));
+  const messages = [];
+  for await (const record of readJsonLines(messagesPath())) {
+    const normalized = normalizeMessageRecord(record, "live-sync");
+    if (!normalized.id || normalized.sourceType === "archive-import" || normalized.actionable === false) {
+      continue;
+    }
+    if (onlyUnread && !normalized.unread) {
+      continue;
+    }
+    messages.push(normalized);
+  }
+
+  messages.sort((a, b) => messageTimestamp(b) - messageTimestamp(a));
+  const created = [];
+  for (const message of messages.slice(0, limit)) {
+    const eventType = message.unread ? "unread_mail_review" : "recent_mail_review";
+    const dedupeKey = `${assignedAgent}:${eventType}:${message.id}`;
+    if (existingDedupeKeys.has(dedupeKey)) {
+      continue;
+    }
+    const ref = summarizeEventMessage(message);
+    const event = normalizeAgentEvent({
+      eventType,
+      priority: message.flagged ? "high" : (message.unread ? "normal" : "low"),
+      assignedAgent,
+      source: "live-sync",
+      accountId: message.accountId || null,
+      provider: message.provider || null,
+      summary: `${message.unread ? "Unread" : "Recent"} ${message.provider || "mail"} message: ${message.subject || "(no subject)"}`,
+      messageRefs: [ref],
+      actionHint: "Ask the user whether to summarize, open, or draft a reply. Draft/send/delete rules still apply.",
+      dedupeKey,
+      metadata: {
+        automationCycle: true,
+        onlyUnread,
+        syncFirst,
+        bodyIncluded: false,
+      },
+    });
+    appendJsonLine(agentEventsPath(), event);
+    existingDedupeKeys.add(dedupeKey);
+    created.push(event);
+  }
+
+  return {
+    status: "ok",
+    service: "NomadMail",
+    assignedAgent,
+    syncFirst,
+    latestSync: sync,
+    inspectedMessages: Math.min(messages.length, limit),
+    createdCount: created.length,
+    createdEvents: created,
+    pending: await listAgentEvents({ assignedAgent, status: "pending", limit: 20 }),
+    safety: "Automation events are local review prompts only. They do not imply approval to read more content, store bodies, send, delete, move, archive, mark, or save attachments.",
+  };
 }
 
 function addTopResult(results, item, limit) {
@@ -1332,6 +1780,72 @@ async function syncOnce(args = {}) {
   return safeRunCli(cliArgs);
 }
 
+async function openMessage(args = {}) {
+  const cliArgs = ["message", "open"];
+  if (args.id) {
+    cliArgs.push("--id", String(args.id));
+  }
+  if (args.conversationId) {
+    cliArgs.push("--conversation-id", String(args.conversationId));
+  }
+  if (args.latestInThread !== false) {
+    cliArgs.push("--latest-in-thread");
+  }
+  if (args.dryRun) {
+    cliArgs.push("--dry-run");
+  }
+  return safeRunCli(cliArgs);
+}
+
+async function executeMessageAction(args = {}) {
+  const cliArgs = ["message", "action"];
+  if (!args.action) {
+    throw new Error("action is required");
+  }
+  cliArgs.push("--action", String(args.action));
+  if (args.id) {
+    cliArgs.push("--id", String(args.id));
+  }
+  if (args.conversationId) {
+    cliArgs.push("--conversation-id", String(args.conversationId));
+  }
+  if (args.latestInThread !== false) {
+    cliArgs.push("--latest-in-thread");
+  }
+  for (const [key, optionName] of [
+    ["to", "--to"],
+    ["cc", "--cc"],
+    ["bcc", "--bcc"],
+    ["subject", "--subject"],
+    ["body", "--body"],
+    ["targetFolder", "--target-folder"],
+    ["attachmentId", "--attachment-id"],
+    ["outputDir", "--output-dir"],
+    ["draftEntryId", "--draft-entry-id"],
+    ["confirmFinal", "--confirm-final"],
+  ]) {
+    if (args[key] !== undefined && args[key] !== null && String(args[key]).length > 0) {
+      cliArgs.push(optionName, String(args[key]));
+    }
+  }
+  if (args.openDraft) {
+    cliArgs.push("--open-draft");
+  }
+  if (args.confirmAction) {
+    cliArgs.push("--confirm-action");
+  }
+  if (args.confirmSend) {
+    cliArgs.push("--confirm-send");
+  }
+  if (args.confirmDelete) {
+    cliArgs.push("--confirm-delete");
+  }
+  if (args.dryRun) {
+    cliArgs.push("--dry-run");
+  }
+  return safeRunCli(cliArgs);
+}
+
 async function startService(args = {}) {
   const cliArgs = ["service", "start"];
   if (args.intervalSeconds) {
@@ -1401,6 +1915,12 @@ async function callTool(name, args = {}) {
       return agentUserFlow();
     case "nomadmail_get_cross_chat_handoff":
       return crossChatHandoff();
+    case "nomadmail_run_agent_automation_cycle":
+      return runAgentAutomationCycle(args);
+    case "nomadmail_list_agent_events":
+      return listAgentEvents(args);
+    case "nomadmail_ack_agent_event":
+      return ackAgentEvent(args);
     case "nomadmail_install_windows_helper":
       return installWindowsHelper(args);
     case "nomadmail_health_check":
@@ -1419,6 +1939,10 @@ async function callTool(name, args = {}) {
       return getMessage(args);
     case "nomadmail_get_message_actions":
       return getMessageActions(args);
+    case "nomadmail_open_message":
+      return openMessage(args);
+    case "nomadmail_execute_message_action":
+      return executeMessageAction(args);
     case "nomadmail_get_backup_status":
       return safeRunCli(["backup", "status"]);
     case "nomadmail_get_service_status":
@@ -1635,6 +2159,27 @@ async function handleHttp(req, res) {
       sendJson(res, 200, crossChatHandoff());
       return;
     }
+    if (req.method === "GET" && url.pathname === "/agent-events") {
+      sendJson(res, 200, await listAgentEvents({
+        assignedAgent: url.searchParams.get("assignedAgent") || "",
+        status: url.searchParams.get("status") || "pending",
+        limit: url.searchParams.get("limit") || "20",
+      }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/agent-events/automation-cycle") {
+      sendJson(res, 200, await runAgentAutomationCycle(await readBody(req)));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/agent-events/ack") {
+      sendJson(res, 200, await ackAgentEvent(await readBody(req)));
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/agent-events/") && url.pathname.endsWith("/ack")) {
+      const eventId = decodeURIComponent(url.pathname.slice("/agent-events/".length, -"/ack".length));
+      sendJson(res, 200, await ackAgentEvent({ ...(await readBody(req)), eventId }));
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/install/windows-helper") {
       sendJson(res, 200, await installWindowsHelper(await readBody(req)));
       return;
@@ -1694,6 +2239,24 @@ async function handleHttp(req, res) {
       sendJson(res, 200, await getMessageActions({ id: url.searchParams.get("id") || "" }));
       return;
     }
+    if (req.method === "POST" && url.pathname === "/messages/open") {
+      sendJson(res, 200, await openMessage(await readBody(req)));
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/messages/") && url.pathname.endsWith("/open")) {
+      const id = decodeURIComponent(url.pathname.slice("/messages/".length, -"/open".length));
+      sendJson(res, 200, await openMessage({ ...(await readBody(req)), id }));
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/messages/action") {
+      sendJson(res, 200, await executeMessageAction(await readBody(req)));
+      return;
+    }
+    if (req.method === "POST" && url.pathname.startsWith("/messages/") && url.pathname.endsWith("/action")) {
+      const id = decodeURIComponent(url.pathname.slice("/messages/".length, -"/action".length));
+      sendJson(res, 200, await executeMessageAction({ ...(await readBody(req)), id }));
+      return;
+    }
     if (req.method === "GET" && url.pathname.startsWith("/messages/") && url.pathname.endsWith("/actions")) {
       const id = decodeURIComponent(url.pathname.slice("/messages/".length, -"/actions".length));
       sendJson(res, 200, await getMessageActions({ id }));
@@ -1740,6 +2303,9 @@ async function selfTest() {
   const search = await searchMessages({ query: "", limit: 1 });
   const latest = await getLatestMessage({ syncFirst: false });
   const actionGuide = await getMessageActions({});
+  const agentEvents = await listAgentEvents({ assignedAgent: "codex", status: "all", limit: 1 });
+  const openCheck = await openMessage({ id: "nomadmail-self-test-missing", dryRun: true });
+  const executeCheck = await executeMessageAction({ action: "draft-new", to: "self-test@example.invalid", subject: "Self test", body: "Dry run", dryRun: true });
   const guide = agentGuide();
   const prompt = startupSystemPrompt();
   const state = workspaceState();
@@ -1755,6 +2321,9 @@ async function selfTest() {
     searchStatus: search.status,
     latestMessageStatus: latest.status,
     messageActionsStatus: actionGuide.status,
+    agentEventsStatus: agentEvents.status,
+    openMessageStatus: openCheck.status,
+    executeMessageActionStatus: executeCheck.status,
     agentGuideStatus: guide.status,
     startupSystemPromptStatus: prompt.status,
     workspaceStateStatus: state.status,
@@ -1802,6 +2371,46 @@ if (mode === "mcp") {
   process.stdout.write(`${JSON.stringify(agentUserFlow(), null, 2)}\n`);
 } else if (mode === "cross-chat-handoff") {
   process.stdout.write(`${JSON.stringify(crossChatHandoff(), null, 2)}\n`);
+} else if (mode === "agent-events") {
+  listAgentEvents({
+    assignedAgent: parseArg("--assigned-agent", ""),
+    status: parseArg("--status", "pending"),
+    limit: parseArg("--limit", "20"),
+  })
+    .then((result) => {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    })
+    .catch((error) => {
+      process.stdout.write(`${JSON.stringify({ status: "error", service: "NomadMail", error: error.message }, null, 2)}\n`);
+      process.exitCode = 1;
+    });
+} else if (mode === "agent-automation-cycle") {
+  runAgentAutomationCycle({
+    assignedAgent: parseArg("--assigned-agent", "codex"),
+    accountId: parseArg("--account-id", ""),
+    syncFirst: hasArg("--sync-first"),
+    onlyUnread: hasArg("--only-unread"),
+    limit: parseArg("--limit", "10"),
+  })
+    .then((result) => {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    })
+    .catch((error) => {
+      process.stdout.write(`${JSON.stringify({ status: "error", service: "NomadMail", error: error.message }, null, 2)}\n`);
+      process.exitCode = 1;
+    });
+} else if (mode === "ack-agent-event") {
+  ackAgentEvent({
+    eventId: parseArg("--event-id", ""),
+    acknowledgedBy: parseArg("--acknowledged-by", "agent"),
+  })
+    .then((result) => {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    })
+    .catch((error) => {
+      process.stdout.write(`${JSON.stringify({ status: "error", service: "NomadMail", error: error.message }, null, 2)}\n`);
+      process.exitCode = 1;
+    });
 } else if (mode === "tools") {
   process.stdout.write(`${JSON.stringify({ status: "ok", service: "NomadMail", tools }, null, 2)}\n`);
 } else if (mode === "install-windows-helper") {
@@ -1819,6 +2428,6 @@ if (mode === "mcp") {
       process.exitCode = 1;
     });
 } else {
-  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|workspace-state|agent-user-flow|cross-chat-handoff|tools|install-windows-helper]\n");
+  process.stderr.write("Usage: node service/nomadmail-service.mjs [mcp|http|self-test|agent-guide|system-prompt|workspace-state|agent-user-flow|cross-chat-handoff|agent-events|agent-automation-cycle|ack-agent-event|tools|install-windows-helper]\n");
   process.exitCode = 2;
 }

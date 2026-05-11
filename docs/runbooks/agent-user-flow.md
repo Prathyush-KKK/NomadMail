@@ -177,6 +177,7 @@ You can ask:
 5. Find mail about a project, person, account, folder, date range, or attachment.
 6. Show bills, statements, promotions, or low-priority mail separately.
 7. Draft a reply or new email from a selected live message.
+8. Open a selected Outlook Desktop message or thread in Outlook.
 ```
 
 The agent should adapt this list to the available data:
@@ -209,7 +210,7 @@ I synced first and found the latest email with content.
 <subject>
 <short snippet/body preview>
 
-Actions available: draft reply, reply all, forward, draft new email, mark read/unread, flag, move/archive, or trash/delete when supported.
+Actions available: open in Outlook when supported, draft reply, reply all, forward, draft new email, mark read/unread, flag, move/archive, or trash/delete when supported.
 ```
 
 Do not expose raw IDs unless diagnostics are requested.
@@ -248,16 +249,19 @@ Which group should I open first?
 
 Trigger:
 
-- the user selects a message and asks to reply, forward, send, move, archive, mark, flag, trash, or delete
+- the user selects a message and asks to open it, go to the thread, reply, forward, send, move, archive, mark, flag, trash, or delete
 
 Agent actions:
 
 1. Verify the message is live and actionable, not archive-only.
 2. Check `actionMenu` or `nomadmail_get_message_actions`.
-3. Draft before send.
-4. Send only after explicit approval of exact recipients, subject, and body.
-5. For trash/delete, ask twice. The second confirmation must name the message and mailbox effect.
-6. Log actions locally.
+3. For Outlook Desktop open/navigation, use `nomadmail_open_message` with the selected message id or conversation id.
+4. For approved Outlook Desktop actions, use `nomadmail_execute_message_action`.
+5. Draft before send. Draft actions save an Outlook draft and do not send it.
+6. Send only after explicit approval of exact recipients, subject, and body, then call `send-draft` with `confirmSend=true`.
+7. For mark/flag/move/archive/save attachment, call the action with `confirmAction=true`.
+8. For trash/delete, ask twice. The second confirmation must name the message and mailbox effect; then call the action with `confirmDelete=true` and the returned `confirmFinal` phrase.
+9. Log actions locally.
 
 User-facing response shape for draft/send:
 
@@ -311,6 +315,36 @@ If auto sync is off:
 
 ```text
 Auto sync is off. Open your agent and ask it to sync, or use Sync now from the tray for a manual refresh.
+```
+
+## Flow 10: Assigned-Agent Automation
+
+Trigger:
+
+- the user asks NomadInbox to push updates to Codex, Claude Code, Kiro, or another assigned agent
+- the tray/worker has synced mail and the user wants pending mail review prompts queued for an agent
+
+Agent actions:
+
+1. Explain that NomadInbox queues local review events and the assigned agent pulls them through MCP/HTTP.
+2. Run `nomadmail_run_agent_automation_cycle` only for already synced mail, or with `syncFirst=true` only when the user approves a freshness sync against already enabled accounts.
+3. Store pending events in ignored `data/agent-events.jsonl`.
+4. Tell the assigned agent to call `nomadmail_list_agent_events` with its agent label, such as `codex`.
+5. Acknowledge events with `nomadmail_ack_agent_event` only after they are handled.
+6. Do not treat an event as approval to fetch additional content, send, move, archive, mark, save attachments, trash, or delete.
+
+User-facing response shape:
+
+```text
+I queued <N> local NomadMail events for <assigned agent>.
+
+Open <assigned agent> and ask it to check pending NomadMail events. It will show the event list first, then ask which message to inspect.
+```
+
+If there are no events:
+
+```text
+No pending NomadMail events are queued for <assigned agent>. You can run Sync now or ask for a fresh automation cycle after accounts are connected.
 ```
 
 ## Flow 10: Closeout

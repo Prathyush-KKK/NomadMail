@@ -2,6 +2,16 @@
 
 NomadMail is the callable service facade over the NomadInbox core.
 
+## Connection Order
+
+Agents should use the strongest available local service surface in this order:
+
+1. MCP first: use the configured `nomadmail` MCP server when the chat platform exposes MCP tools, or launch `.\scripts\nomadmail-mcp.ps1` when stdio MCP can be configured.
+2. HTTP second: if MCP tools are not visible in that chat, use the tray-owned loopback service at `http://127.0.0.1:8791` when the Windows tray or HTTP launcher is running.
+3. CLI third: if neither MCP nor HTTP is available but local shell access works, use `node .\service\nomadmail-service.mjs ...` and the PowerShell CLI from the workspace.
+
+If a chat says it cannot see `nomadmail_*` tools, that is not by itself a NomadMail failure. It means the current chat surface did not inject the MCP server as tools; fall back to HTTP or CLI while preserving the same approval boundaries.
+
 ## MCP
 
 Use MCP when an agent supports stdio MCP servers:
@@ -52,6 +62,9 @@ Primary tools:
 - `nomadmail_get_workspace_state`
 - `nomadmail_get_agent_user_flow`
 - `nomadmail_get_cross_chat_handoff`
+- `nomadmail_run_agent_automation_cycle`
+- `nomadmail_list_agent_events`
+- `nomadmail_ack_agent_event`
 - `nomadmail_install_windows_helper`
 - `nomadmail_health_check`
 - `nomadmail_list_providers`
@@ -61,6 +74,8 @@ Primary tools:
 - `nomadmail_get_latest_message`
 - `nomadmail_get_message`
 - `nomadmail_get_message_actions`
+- `nomadmail_open_message`
+- `nomadmail_execute_message_action`
 - `nomadmail_import_archive`
 
 ## HTTP
@@ -86,6 +101,9 @@ Invoke-RestMethod http://127.0.0.1:8791/providers
 Invoke-RestMethod "http://127.0.0.1:8791/messages?query=invoice&limit=5"
 Invoke-RestMethod -Method Post http://127.0.0.1:8791/sync/once -Body '{"accountId":"personal-gmail"}' -ContentType 'application/json'
 Invoke-RestMethod -Method Post http://127.0.0.1:8791/messages/latest -Body '{"syncFirst":true,"requireContent":true}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post http://127.0.0.1:8791/messages/open -Body '{"id":"<message-id>"}' -ContentType 'application/json'
+Invoke-RestMethod -Method Post http://127.0.0.1:8791/agent-events/automation-cycle -Body '{"assignedAgent":"codex","limit":10}' -ContentType 'application/json'
+Invoke-RestMethod "http://127.0.0.1:8791/agent-events?assignedAgent=codex&status=pending"
 ```
 
 ## Guidance for Calling Agents
@@ -94,7 +112,9 @@ Other agents should call `nomadmail_get_agent_guide` first. It returns the curre
 
 Use [Agent User Flow](agent-user-flow.md), `nomadmail_get_agent_user_flow`, or HTTP `/agent-user-flow` as the user-facing conversation contract from first prompt through daily-mail query choices. The service runbook describes callable tools; the user-flow runbook describes what the agent should say and ask at each state.
 
-Use `nomadmail_get_cross_chat_handoff`, HTTP `/cross-chat-handoff`, or `prompts/nomadmail-cross-chat-handoff.md` when a different chat session needs to connect to the same local workspace. The handoff prompt tells the new agent how to load repo-owned context, prefer MCP or tray-owned HTTP, refresh current status, and preserve mailbox/source approval boundaries.
+Use `nomadmail_get_cross_chat_handoff`, HTTP `/cross-chat-handoff`, or `prompts/nomadmail-cross-chat-handoff.md` when a different chat session needs to connect to the same local workspace. The handoff prompt tells the new agent how to load repo-owned context, try MCP first, fall back to tray-owned HTTP second, use direct CLI third, refresh current status, and preserve mailbox/source approval boundaries.
+
+Use [Codex Automation](codex-automation.md) when configuring Codex to consume NomadMail events. NomadInbox queues local events through `nomadmail_run_agent_automation_cycle`; Codex pulls them with `nomadmail_list_agent_events` and acknowledges handled items with `nomadmail_ack_agent_event`.
 
 For the tested scenario inputs and expected/observed outputs, see
 [Agent User Flow Test Matrix](agent-user-flow-test-matrix.md).
@@ -112,6 +132,10 @@ For latest-email questions, run a one-shot live sync first. Use `nomadmail_get_l
 
 After a message is discovered, use the `actionMenu` on search/latest results or call `nomadmail_get_message_actions` to present a compact action surface. Good user-facing actions are draft reply, draft reply all, draft forward, draft new mail, mark read/unread, flag/star, move/archive, and trash/delete when the selected live message supports them. Imported archive messages are read-only; offer summarize, extract follow-up, or find the matching live message instead.
 
+When the user asks to go to a specific Outlook Desktop mail thread, use `nomadmail_open_message` or HTTP `POST /messages/open` with the selected message id. If the user selected a conversation instead of a single message, pass `conversationId` and keep `latestInThread=true` so NomadInbox opens the newest synced item in that thread. This uses the preserved Outlook EntryID and opens the item in Outlook Desktop. Use `dryRun=true` for tests or diagnostics.
+
+When the user approves an Outlook Desktop live-message action, use `nomadmail_execute_message_action`, HTTP `POST /messages/action`, or `.\scripts\nomad-inbox.ps1 message action`. Draft actions create saved Outlook drafts only. `send-draft` requires `confirmSend` after the user approves the exact draft. Mark read/unread, flag/unflag, move, archive, and save attachment require `confirmAction`. Trash/delete requires `confirmDelete` plus the returned `confirmFinal` phrase, for example `trash:<message-id>`. `delete` moves the message to Deleted Items; permanent delete is not a default action.
+
 Mail actions are permission gated. Replies, forwards, and new mail must be drafted first, then sent only after the user approves the exact draft, recipients, subject, and body. Trash/delete requires double explicit approval: confirm intent first, then ask for a final confirmation naming the message and mailbox effect. Tell the user the action may not complete if provider permissions or runtime access are missing, such as read-only Gmail/Graph scopes, missing Graph write/send scopes, or Outlook Desktop COM not being reachable in the signed-in Windows session.
 
 User-facing setup responses should be short. When the user asks to install, start, or run the service on Windows, start or verify the tray controller instead of starting only the raw HTTP server. When the local service is healthy and the tray is running, tell the user NomadMail is available from the NomadInbox system tray. Do not print endpoint catalogs, raw health JSON, process listings, or message search results unless the user asks for diagnostics.
@@ -127,6 +151,7 @@ When an agent opens this repository as a user workspace:
 - Do not discover credentials, mailbox profiles, exports, or connected accounts until the user approves the exact source and scope.
 - For complex PowerShell diagnostics, create temporary scripts only under ignored scratch locations such as `runtime\agent-scratch\` or the OS temp directory. Do not place ad hoc diagnostic scripts in `scripts\`, `src\`, `service\`, `docs\`, or the repository root. Keep tracked scripts for durable sync/service behavior.
 - For broad email-range outputs, give generated markdown, HTML, and JSON reports range-aware names. Include the source and a sortable date label in the folder or filename, for example `unread-outlook-2026-04-29-to-2026-05-06.md`, `unread-outlook-week-of-2026-05-06-index.md`, or `gmail-takeout-2025.md`.
+- For assigned-agent automation, queue only bounded local events in `agent-events.jsonl`. Do not push full message bodies to external agents by default, and do not treat an event as approval to mutate mail.
 
 Use this rule before parsing or syncing email for another repository:
 
@@ -163,6 +188,7 @@ npm run index
 - MCP and HTTP use the same local ignored runtime data as the CLI.
 - MCP stdio is agent-launched. The Windows tray owns the long-running local HTTP service while the tray is open.
 - Default imports and syncs write to NomadInbox `data/` unless `NOMADINBOX_DATA_DIR` is set before the CLI/service starts.
+- Agent automation events are stored locally in ignored `data/agent-events.jsonl`.
 - Gmail API sync requires `NOMADINBOX_GMAIL_ACCESS_TOKEN` or a Gmail-scoped `gcloud` login.
 - Outlook Graph sync requires `NOMADINBOX_GRAPH_ACCESS_TOKEN` or an Azure CLI Microsoft Graph token.
 - Outlook Desktop sync requires Windows and the signed-in Windows Outlook profile.
@@ -170,8 +196,8 @@ npm run index
 - Non-Windows agents should keep the MCP server available for `nomadmail_get_agent_guide`, `nomadmail_search_messages`, and `nomadmail_get_message`, and return a clear unsupported-runtime response for Windows-only helper, tray, and Outlook Desktop operations.
 - Archive import still requires an explicitly provided local path.
 - Full archive body import still requires `includeBodies=true`.
-- Send-style mailbox actions must stay behind the existing confirmation gate before they are added to this service.
-- Trash/delete must stay behind a double-confirmation gate before any destructive mailbox action is added to this service.
+- Send-style mailbox actions stay behind the existing confirmation gate.
+- Trash/delete stays behind a double-confirmation gate. Permanent delete is not a default action.
 - Outlook Desktop access must run in the signed-in Windows user session because it depends on the local Outlook profile.
 
 ## Diagnostics
@@ -181,6 +207,8 @@ node .\service\nomadmail-service.mjs agent-guide
 node .\service\nomadmail-service.mjs workspace-state
 node .\service\nomadmail-service.mjs agent-user-flow
 node .\service\nomadmail-service.mjs cross-chat-handoff
+node .\service\nomadmail-service.mjs agent-automation-cycle --assigned-agent codex --limit 10
+node .\service\nomadmail-service.mjs agent-events --assigned-agent codex --status pending
 node .\service\nomadmail-service.mjs install-windows-helper
 node .\service\nomadmail-service.mjs self-test
 node .\service\nomadmail-service.mjs tools

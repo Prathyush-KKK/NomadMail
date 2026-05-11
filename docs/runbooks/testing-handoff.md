@@ -51,7 +51,7 @@ git diff --check
 Expected outputs:
 
 - `validate.ps1`: JSON `status=ok`
-- `agent-user-flow.ps1`: JSON `status=ok`, eight scenarios `status=ok`
+- `agent-user-flow.ps1`: JSON `status=ok`, nine scenarios `status=ok`
 - `smoke.ps1`: JSON `status=ok`
 - `git diff --check`: no whitespace errors
 
@@ -64,10 +64,10 @@ Validated from `C:\Users\prat\Documents\osm\NomadInbox` on
 |---|---|---|---|
 | Repository contract validation | `.\scripts\validate.ps1` | JSON `status=ok`; no missing required files, forbidden tracked runtime files, parse errors, missing tray markers, or forbidden tray markers. | Pass. Required handoff files and new-clone test are now part of the validated repo contract. |
 | Service syntax | `node --check .\service\nomadmail-service.mjs` | Exit code `0`. | Pass. Node service parses cleanly. |
-| Synthetic complete user flow | `.\tests\agent-user-flow.ps1` | JSON `status=ok`; eight scenarios returned `status=ok`; temp HTTP health, `/agent-user-flow`, archive search, message-actions, and latest diagnostic all passed. | Pass. Validates first prompt, source approval, first import, tray wording, daily choices, latest freshness, broad range report naming, and action confirmation wording without live mailbox access. |
+| Synthetic complete user flow | `.\tests\agent-user-flow.ps1` | JSON `status=ok`; nine scenarios returned `status=ok`; temp HTTP health, `/agent-user-flow`, archive search, message-actions, agent-events, and latest diagnostic all passed. | Pass. Validates first prompt, source approval, first import, tray wording, daily choices, latest freshness, broad range report naming, action confirmation wording, and assigned-agent automation without live mailbox access. |
 | Current workspace bootstrap/new-clone harness | `.\tests\new-clone.ps1` | JSON `status=ok`; account config existed in this workspace; `accountCount=3`, `enabledCount=1`; synthetic EML import/search and HTTP surfaces passed; Windows helper dry bootstrap passed. | Pass for current workspace mode. Do not use this result as proof of a clean clone because this checkout intentionally has ignored local account config. |
 | Clean-clone simulation from current working tree | Temporary git repo copied from tracked plus untracked non-ignored files, then `.\tests\new-clone.ps1 -ExpectedCleanClone` | JSON `status=ok`; `accountsConfigExists=false`, `repoDataDirExists=false`, `configExists=false`, `enabledCount=0`; git-ignore boundary, synthetic import/search, HTTP health, and Windows helper dry bootstrap all passed. | Pass. This validates the pending working tree as a clean clone without copying local mailbox config or runtime data. A real clone on another machine should still run the same command and submit its JSON report. |
-| Broader smoke suite | `.\tests\smoke.ps1` | JSON `status=ok`; covered doctor, providers, accounts, helper install, tray status, sync account, service/backup/import status, sample/import, locale parsing, self-test, latest, message actions, user flow, guide, startup prompt, workspace state, and installer package. | Pass. Main tool/script surfaces are callable with synthetic or safe local state. |
+| Broader smoke suite | `.\tests\smoke.ps1` | JSON `status=ok`; covered doctor, providers, accounts, helper install, tray status, sync account, service/backup/import status, sample/import, locale parsing, self-test, latest, message actions, Outlook action dry-runs and confirmation gates, user flow, guide, startup prompt, workspace state, and installer package. | Pass. Main tool/script surfaces are callable with synthetic or safe local state. |
 | Whitespace check | `git diff --check` | Exit code `0`; Git printed line-ending normalization warnings only. | Pass. No whitespace errors in the working diff. |
 
 The clean-state mode has been simulated from the current working tree. Run the
@@ -82,13 +82,15 @@ same clean-state command in a real fresh clone on another machine before release
 | Area | What To Test | Default Command Or Surface | Expected Output |
 |---|---|---|---|
 | Context-aware startup | Startup prompt, workspace state, agent-user-flow, agent-guide | `node service/nomadmail-service.mjs system-prompt`, `workspace-state`, `agent-user-flow`, `agent-guide` | All return `status=ok`; guide embeds user flow; prompt tells agent what first response must show. |
-| Tool discovery | MCP tool registry | `node service/nomadmail-service.mjs tools` | Includes startup, workspace state, agent user flow, search, latest, message actions, sync, import, backup/status tools. |
+| Tool discovery | MCP tool registry | `node service/nomadmail-service.mjs tools` | Includes startup, workspace state, agent user flow, search, latest, message actions, Outlook action execution, sync, import, backup/status, and assigned-agent event tools. |
 | HTTP service | Local loopback service | `node service/nomadmail-service.mjs http --port <port>` then `GET /health` | Health returns `status=ok`; service binds to `127.0.0.1`. |
 | PowerShell CLI | Setup, doctor, providers, accounts, status | `scripts/nomad-inbox.ps1 setup`, `doctor`, `providers list`, `accounts list` | JSON outputs return `status=ok`; providers include Gmail API, Outlook Graph, Outlook Desktop. |
 | Archive import | Dry-run and write read-only import | `import eml --dry-run`, then `import eml` against generated EML | Dry-run reports one message; import writes one `actionable=false` archive message. |
 | Search | Search live/archive store | `GET /messages?query=<term>&limit=5` | JSON `status=ok`; synthetic test returns at least one archive result. |
 | Message actions | Action guide for archive and live messages | `GET /message-actions?id=<id>` | Archive is non-actionable; live messages expose draft-first action guidance when supported. |
+| Outlook action execution | Dry-run and confirmation-gated Outlook Desktop actions | `POST /messages/action` with `dryRun=true`; CLI `message action --action mark-read --id <id>` without confirmation | Dry-runs return `status=dryRun` and do not touch Outlook; unconfirmed mutation returns `pendingConfirmation`; trash/delete returns a required final phrase. |
 | Latest email freshness | Latest-email path | `POST /messages/latest` | With live approval, syncs first. Without live sync, preserves freshness rule and does not present stale data as definite latest. |
+| Assigned-agent automation | Codex event queue path | `POST /agent-events/automation-cycle`, `GET /agent-events`, then `POST /agent-events/<event-id>/ack` | Creates bounded local review events, lets Codex or another assigned agent pull them, and acknowledges handled events without mailbox mutation. |
 | Tray | Windows compiled tray status/start | `scripts/nomad-inbox.ps1 tray status`, `tray start` | Tray status is JSON; start tells user NomadMail is available from system tray. |
 | Windows helper | Helper install without mail access | `install windows-helper --data-dir <temp> --install-root <temp>` | Initializes helper/status paths; does not read mail or enable auto sync. |
 | Runtime privacy | Git ignore protections | `git check-ignore -v data/messages.jsonl data/provider-raw.jsonl config/accounts.json runtime/agent-scratch` | All paths are ignored. |
@@ -113,6 +115,7 @@ This test validates:
 - latest email freshness
 - broad digest/range report output
 - mail action follow-up
+- assigned-agent automation
 - archive read-only action boundary
 - `nomadmail_get_agent_user_flow`
 - HTTP `/agent-user-flow`
@@ -163,9 +166,9 @@ Expected output:
 - no local `config/accounts.json` before setup
 - account templates are present but all disabled
 - required files exist
-- tool registry includes the context/user-flow/search/latest/action/import tools
+- tool registry includes the context/user-flow/search/latest/action/import/agent-event tools
 - synthetic EML import/search succeeds in a temp data dir
-- HTTP `/health`, `/agent-user-flow`, `/messages`, and `/message-actions` work on a random local port
+- HTTP `/health`, `/agent-user-flow`, `/messages`, `/message-actions`, and `/agent-events` work on a random local port
 - Windows helper install works on Windows without reading mail
 - non-Windows systems return a clear unsupported-platform boundary for Windows helper/tray/Outlook Desktop
 
