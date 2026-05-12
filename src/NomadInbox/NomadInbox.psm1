@@ -1482,11 +1482,107 @@ function Get-NomadInboxExternalCommandOutput {
     return ""
 }
 
+function Get-NomadInboxGcloudApplicationDefaultAccessToken {
+    return Get-NomadInboxExternalCommandOutput -CommandNames @("gcloud", "gcloud.cmd", "gcloud.ps1") -Arguments @("auth", "application-default", "print-access-token")
+}
+
+function Get-NomadInboxAccountSetting {
+    param($Account, [string[]]$Names, [string[]]$EnvironmentNames = @(), [string]$Default = "")
+    foreach ($name in $Names) {
+        if ($null -ne $Account -and $Account.PSObject.Properties.Name -contains $name) {
+            $value = [string]$Account.$name
+            if (-not [string]::IsNullOrWhiteSpace($value)) { return $value }
+        }
+    }
+    foreach ($name in $EnvironmentNames) {
+        $value = [System.Environment]::GetEnvironmentVariable($name, "Process")
+        if (-not [string]::IsNullOrWhiteSpace($value)) { return $value }
+    }
+    return $Default
+}
+
+function Set-NomadInboxGmailAuthError {
+    param([string]$Message)
+    $text = ([string]$Message).Trim()
+    if ($text.Length -gt 500) {
+        $text = $text.Substring(0, 500)
+    }
+    $script:NomadInboxLastGmailAuthError = $text
+}
+
+function Get-NomadInboxGoogleRefreshTokenAccessToken {
+    param($Account = $null)
+
+    $clientId = Get-NomadInboxAccountSetting -Account $Account -Names @("oauthClientId", "clientId") -EnvironmentNames @("NOMADINBOX_GMAIL_OAUTH_CLIENT_ID", "NOMADINBOX_GMAIL_CLIENT_ID", "OSM_MAIL_LISTENER_OAUTH_CLIENT_ID")
+    $clientSecret = Get-NomadInboxAccountSetting -Account $Account -Names @("oauthClientSecret", "clientSecret") -EnvironmentNames @("NOMADINBOX_GMAIL_OAUTH_CLIENT_SECRET", "NOMADINBOX_GMAIL_CLIENT_SECRET", "OSM_MAIL_LISTENER_OAUTH_CLIENT_SECRET")
+    $refreshToken = Get-NomadInboxAccountSetting -Account $Account -Names @("oauthRefreshToken", "refreshToken") -EnvironmentNames @("NOMADINBOX_GMAIL_OAUTH_REFRESH_TOKEN", "NOMADINBOX_GMAIL_REFRESH_TOKEN", "OSM_MAIL_LISTENER_OAUTH_REFRESH_TOKEN")
+    $tokenUri = Get-NomadInboxAccountSetting -Account $Account -Names @("oauthTokenUri", "tokenUri") -EnvironmentNames @("NOMADINBOX_GMAIL_OAUTH_TOKEN_URI", "NOMADINBOX_GMAIL_TOKEN_URI", "OSM_MAIL_LISTENER_OAUTH_TOKEN_URI") -Default "https://oauth2.googleapis.com/token"
+
+    if ([string]::IsNullOrWhiteSpace($clientId) -or [string]::IsNullOrWhiteSpace($clientSecret) -or [string]::IsNullOrWhiteSpace($refreshToken)) {
+        $missing = @()
+        if ([string]::IsNullOrWhiteSpace($clientId)) { $missing += "client id" }
+        if ([string]::IsNullOrWhiteSpace($clientSecret)) { $missing += "client secret" }
+        if ([string]::IsNullOrWhiteSpace($refreshToken)) { $missing += "refresh token" }
+        Set-NomadInboxGmailAuthError -Message ("Missing required refresh-token input(s): " + ($missing -join ", "))
+        return ""
+    }
+    try {
+        $response = Invoke-RestMethod -Method Post -Uri $tokenUri -ContentType "application/x-www-form-urlencoded" -Body @{
+            client_id = $clientId
+            client_secret = $clientSecret
+            refresh_token = $refreshToken
+            grant_type = "refresh_token"
+        }
+        return [string]$response.access_token
+    } catch {
+        $detail = $_.Exception.Message
+        if ($_.Exception.Response) {
+            try {
+                $stream = $_.Exception.Response.GetResponseStream()
+                if ($stream) {
+                    $reader = New-Object System.IO.StreamReader($stream)
+                    $body = $reader.ReadToEnd()
+                    if (-not [string]::IsNullOrWhiteSpace($body)) {
+                        $parsed = $body | ConvertFrom-Json
+                        if ($parsed.error -or $parsed.error_description) {
+                            $detail = ((@($parsed.error, $parsed.error_description) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ": ")
+                        }
+                    }
+                }
+            } catch {
+            }
+        }
+        Set-NomadInboxGmailAuthError -Message ("Google OAuth token endpoint failed: " + $detail)
+        return ""
+    }
+}
+
 function Get-NomadInboxGmailAccessToken {
+    param($Account = $null)
+
+    $script:NomadInboxLastGmailAuthError = ""
     if (-not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_ACCESS_TOKEN)) {
         return $env:NOMADINBOX_GMAIL_ACCESS_TOKEN
     }
-    return Get-NomadInboxExternalCommandOutput -CommandNames @("gcloud", "gcloud.cmd", "gcloud.ps1") -Arguments @("auth", "print-access-token")
+    $authMode = ""
+    if ($null -ne $Account -and $Account.authMode) {
+        $authMode = [string]$Account.authMode
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:NOMADINBOX_GMAIL_AUTH_MODE)) {
+        $authMode = $env:NOMADINBOX_GMAIL_AUTH_MODE
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:OSM_MAIL_LISTENER_GMAIL_AUTH_MODE)) {
+        $authMode = $env:OSM_MAIL_LISTENER_GMAIL_AUTH_MODE
+    }
+    if ($authMode -ieq "refresh-token") {
+        return Get-NomadInboxGoogleRefreshTokenAccessToken -Account $Account
+    }
+    if ($authMode -ieq "gcloud-adc") {
+        return Get-NomadInboxGcloudApplicationDefaultAccessToken
+    }
+    $token = Get-NomadInboxExternalCommandOutput -CommandNames @("gcloud", "gcloud.cmd", "gcloud.ps1") -Arguments @("auth", "print-access-token")
+    if (-not [string]::IsNullOrWhiteSpace($token)) { return $token }
+    $token = Get-NomadInboxGoogleRefreshTokenAccessToken -Account $Account
+    if (-not [string]::IsNullOrWhiteSpace($token)) { return $token }
+    return Get-NomadInboxGcloudApplicationDefaultAccessToken
 }
 
 function Get-NomadInboxGraphAccessToken {
@@ -1553,9 +1649,18 @@ function ConvertFrom-NomadInboxGmailMessage {
 
 function Invoke-NomadInboxGmailApiSync {
     param($Account, [datetime]$StartedAt)
-    $token = Get-NomadInboxGmailAccessToken
+    $token = Get-NomadInboxGmailAccessToken -Account $Account
     if ([string]::IsNullOrWhiteSpace($token)) {
-        return New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAuth" -Reason "Set NOMADINBOX_GMAIL_ACCESS_TOKEN or sign in with gcloud using Gmail scopes." -Synced 0 -StartedAt $StartedAt
+        $reason = "Set NOMADINBOX_GMAIL_ACCESS_TOKEN or sign in with gcloud using Gmail scopes."
+        if ($Account.authMode -ieq "gcloud-adc" -or $env:NOMADINBOX_GMAIL_AUTH_MODE -ieq "gcloud-adc" -or $env:OSM_MAIL_LISTENER_GMAIL_AUTH_MODE -ieq "gcloud-adc") {
+            $reason = "Refresh gcloud application-default credentials with Gmail readonly scope, or set NOMADINBOX_GMAIL_ACCESS_TOKEN."
+        } elseif ($Account.authMode -ieq "refresh-token" -or $env:NOMADINBOX_GMAIL_AUTH_MODE -ieq "refresh-token" -or $env:OSM_MAIL_LISTENER_GMAIL_AUTH_MODE -ieq "refresh-token") {
+            $reason = "Refresh-token Gmail auth is selected, but no access token could be minted. Check client id, client secret, refresh token, token URI, and Gmail readonly scope."
+            if (-not [string]::IsNullOrWhiteSpace($script:NomadInboxLastGmailAuthError)) {
+                $reason = "Refresh-token Gmail auth failed. " + $script:NomadInboxLastGmailAuthError
+            }
+        }
+        return New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAuth" -Reason $reason -Synced 0 -StartedAt $StartedAt
     }
     $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
     $captureRaw = Test-NomadInboxAccountOption -Account $Account -Names @("captureRawProviderData", "captureRaw", "storeRaw") -Default $true

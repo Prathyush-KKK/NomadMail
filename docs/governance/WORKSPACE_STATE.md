@@ -1,6 +1,6 @@
 # NomadInbox Workspace State
 
-Last updated: 2026-05-11
+Last updated: 2026-05-13
 
 ## Current Summary
 
@@ -45,19 +45,19 @@ The state file should capture durable workspace behavior and follow-ups. It shou
 
 ## Latest Session
 
-Title: Windows startup tray popup and README onboarding
+Title: Gmail account connected
 
 Status: completed
 
 Summary:
 
-- Added approved Windows helper install flow for current-user startup shortcut and tray popup on launch, simplified README onboarding, widened NomadMail health CLI timeout, and validated tray, HTTP, MCP, smoke, agent-flow, and new-clone paths.
+- Personal Gmail is connected through direct OAuth refresh-token auth stored in ignored local config. A scoped Gmail sync completed successfully for personal-gmail with 50 messages, while Outlook Desktop remains available in the same local store.
 
 Workspace revision:
 
 - Branch: main
-- HEAD: 08aedb1
+- HEAD: e714ae4
 
 ## Open Follow-Ups
 
-- Refresh live status at startup and continue from the latest user-approved source/action.
+- Use the tray, MCP, HTTP, or CLI to query Gmail and Outlook together; keep Gmail tokens and runtime data out of Git.

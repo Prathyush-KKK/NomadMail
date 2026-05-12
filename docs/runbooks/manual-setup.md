@@ -110,7 +110,15 @@ Keep limits small for the first run.
 Gmail API sync expects one of:
 
 - `NOMADINBOX_GMAIL_ACCESS_TOKEN`
+- `authMode: "refresh-token"` on the account, or `NOMADINBOX_GMAIL_AUTH_MODE=refresh-token`, with OAuth client id, client secret, refresh token, and token URI set through ignored local config or process environment
 - a Gmail-scoped local `gcloud` login
+- `authMode: "gcloud-adc"` on the account, or `NOMADINBOX_GMAIL_AUTH_MODE=gcloud-adc`, with Gmail-scoped application-default credentials
+
+Prefer `refresh-token` mode for regular local use. Web and application-default
+auth are useful for development, but they are easy to break when browser consent,
+Google app verification, or local ADC state changes. Keep refresh-token values in
+`config\nomad-inbox.ps1` or another ignored local secret source, never in tracked
+docs or account examples.
 
 Outlook Graph sync expects one of:
 
