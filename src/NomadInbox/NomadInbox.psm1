@@ -1607,6 +1607,115 @@ function Get-NomadInboxGmailHeader {
     return ""
 }
 
+function ConvertFrom-NomadInboxBase64UrlString {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return "" }
+    $base64 = $Value.Replace("-", "+").Replace("_", "/")
+    switch ($base64.Length % 4) {
+        2 { $base64 += "==" }
+        3 { $base64 += "=" }
+    }
+    try {
+        return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($base64))
+    } catch {
+        return ""
+    }
+}
+
+function Get-NomadInboxGmailBodyParts {
+    param($Part, [System.Collections.ArrayList]$TextParts, [System.Collections.ArrayList]$HtmlParts)
+    if ($null -eq $Part) { return }
+    $fileName = if ($Part.filename) { [string]$Part.filename } else { "" }
+    $mimeType = if ($Part.mimeType) { [string]$Part.mimeType } else { "" }
+    $data = if ($Part.body -and $Part.body.data) { [string]$Part.body.data } else { "" }
+
+    if ([string]::IsNullOrWhiteSpace($fileName) -and -not [string]::IsNullOrWhiteSpace($data)) {
+        $decoded = ConvertFrom-NomadInboxBase64UrlString $data
+        if (-not [string]::IsNullOrWhiteSpace($decoded)) {
+            if ($mimeType -ieq "text/plain") {
+                [void]$TextParts.Add($decoded)
+            } elseif ($mimeType -ieq "text/html") {
+                [void]$HtmlParts.Add($decoded)
+            }
+        }
+    }
+
+    foreach ($child in @($Part.parts | Where-Object { $null -ne $_ })) {
+        Get-NomadInboxGmailBodyParts -Part $child -TextParts $TextParts -HtmlParts $HtmlParts
+    }
+}
+
+function Get-NomadInboxGmailBodyContent {
+    param($Payload)
+    $textParts = [System.Collections.ArrayList]::new()
+    $htmlParts = [System.Collections.ArrayList]::new()
+    Get-NomadInboxGmailBodyParts -Part $Payload -TextParts $textParts -HtmlParts $htmlParts
+    [pscustomobject]@{
+        bodyText = if ($textParts.Count -gt 0) { ($textParts -join "`n`n") } else { $null }
+        bodyHtml = if ($htmlParts.Count -gt 0) { ($htmlParts -join "`n`n") } else { $null }
+    }
+}
+
+function Get-NomadInboxGmailAttachmentParts {
+    param($Part, [System.Collections.ArrayList]$Attachments)
+    if ($null -eq $Part) { return }
+    $fileName = if ($Part.filename) { [string]$Part.filename } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace($fileName)) {
+        [void]$Attachments.Add([pscustomobject]@{
+            id = if ($Part.body -and $Part.body.attachmentId) { [string]$Part.body.attachmentId } elseif ($Part.partId) { [string]$Part.partId } else { ConvertTo-NomadInboxHash ($fileName + "|" + [string]$Part.mimeType) }
+            name = $fileName
+            contentType = if ($Part.mimeType) { [string]$Part.mimeType } else { $null }
+            sizeBytes = if ($Part.body -and $Part.body.size) { [int64]$Part.body.size } else { $null }
+            localPath = $null
+        })
+    }
+    foreach ($child in @($Part.parts | Where-Object { $null -ne $_ })) {
+        Get-NomadInboxGmailAttachmentParts -Part $child -Attachments $Attachments
+    }
+}
+
+function Get-NomadInboxGmailAttachmentMetadata {
+    param($Payload)
+    $attachments = [System.Collections.ArrayList]::new()
+    Get-NomadInboxGmailAttachmentParts -Part $Payload -Attachments $attachments
+    return @($attachments)
+}
+
+function Copy-NomadInboxJsonObject {
+    param($InputObject)
+    if ($null -eq $InputObject) { return $null }
+    return ($InputObject | ConvertTo-Json -Depth 100 | ConvertFrom-Json)
+}
+
+function Remove-NomadInboxGmailInlineBodyData {
+    param($Node)
+    if ($null -eq $Node) { return }
+    if ($Node -is [System.Array]) {
+        foreach ($item in $Node) { Remove-NomadInboxGmailInlineBodyData -Node $item }
+        return
+    }
+    if ($null -eq $Node.PSObject) { return }
+    $properties = @($Node.PSObject.Properties)
+    if (($properties.Name -contains "body") -and $Node.body -and $Node.body.PSObject) {
+        $bodyProperties = @($Node.body.PSObject.Properties)
+        if ($bodyProperties.Name -contains "data") {
+            $Node.body.PSObject.Properties.Remove("data")
+            if (@($Node.body.PSObject.Properties).Name -notcontains "dataOmittedByNomadInbox") {
+                $Node.body | Add-Member -NotePropertyName "dataOmittedByNomadInbox" -NotePropertyValue $true -Force
+            }
+        }
+    }
+    foreach ($property in $properties) {
+        if ($property.Name -eq "body") {
+            Remove-NomadInboxGmailInlineBodyData -Node $property.Value
+            continue
+        }
+        if ($null -ne $property.Value -and -not ($property.Value -is [string])) {
+            Remove-NomadInboxGmailInlineBodyData -Node $property.Value
+        }
+    }
+}
+
 function ConvertFrom-NomadInboxGmailMessage {
     param($Message, $Account, [string]$BodyText = $null, [string]$BodyHtml = $null, [array]$Attachments = @(), [string]$ProviderRawRef = "", [bool]$RawCaptured = $false)
     $headers = @{}
@@ -1662,64 +1771,67 @@ function Invoke-NomadInboxGmailApiSync {
         }
         return New-NomadInboxSyncResult -Account $Account -Status "pendingProviderAuth" -Reason $reason -Synced 0 -StartedAt $StartedAt
     }
-    $limit = if ($Account.limit) { [int]$Account.limit } else { 25 }
+    $limit = if ($null -ne $Account.limit) { [int]$Account.limit } else { 25 }
+    $maxToFetch = if ($limit -le 0) { [int]::MaxValue } else { $limit }
     $captureRaw = Test-NomadInboxAccountOption -Account $Account -Names @("captureRawProviderData", "captureRaw", "storeRaw") -Default $true
     $includeBodies = Test-NomadInboxAccountOption -Account $Account -Names @("includeBodies", "storeBodies") -Default $false
     $includeAttachments = Test-NomadInboxAccountOption -Account $Account -Names @("includeAttachments", "captureAttachments") -Default $true
     $folder = if ([string]::IsNullOrWhiteSpace($Account.folder)) { "Inbox" } else { [string]$Account.folder }
     $headers = @{ Authorization = "Bearer $token" }
-    $queryParams = @{
-        maxResults = [Math]::Max(1, [Math]::Min(100, $limit))
-    }
-    if ($folder -ieq "Inbox") { $queryParams.labelIds = "INBOX" }
-    if (-not [string]::IsNullOrWhiteSpace($Account.query)) { $queryParams.q = [string]$Account.query }
-    $query = ($queryParams.GetEnumerator() | ForEach-Object { "{0}={1}" -f [uri]::EscapeDataString($_.Key), [uri]::EscapeDataString([string]$_.Value) }) -join "&"
-    $listUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages?$query"
     try {
-        $list = Invoke-RestMethod -Method Get -Uri $listUri -Headers $headers
         $records = @()
         $rawRecords = @()
-        foreach ($messageRef in @($list.messages | Where-Object { $null -ne $_ -and $_.id })) {
-            $formatQuery = if ($includeBodies -or $includeAttachments) {
-                "format=full"
-            } else {
-                "format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID"
+        $pageToken = ""
+        $pagesFetched = 0
+        do {
+            $remaining = $maxToFetch - $records.Count
+            if ($remaining -le 0) { break }
+            $queryParams = @{
+                maxResults = [Math]::Max(1, [Math]::Min(500, $remaining))
             }
-            $messageUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages/$([uri]::EscapeDataString([string]$messageRef.id))?$formatQuery"
-            $message = Invoke-RestMethod -Method Get -Uri $messageUri -Headers $headers
-            $attachments = @()
-            if ($includeAttachments -and $message.payload) {
-                $parts = @($message.payload.parts | Where-Object { $null -ne $_ })
-                foreach ($part in $parts) {
-                    if (-not [string]::IsNullOrWhiteSpace($part.filename)) {
-                        $attachments += [pscustomobject]@{
-                            id = if ($part.body.attachmentId) { [string]$part.body.attachmentId } else { [string]$part.partId }
-                            name = [string]$part.filename
-                            contentType = [string]$part.mimeType
-                            sizeBytes = if ($part.body.size) { [int64]$part.body.size } else { $null }
-                            localPath = $null
-                        }
-                    }
+            if ($folder -ieq "Inbox") { $queryParams.labelIds = "INBOX" }
+            if (-not [string]::IsNullOrWhiteSpace($Account.query)) { $queryParams.q = [string]$Account.query }
+            if (-not [string]::IsNullOrWhiteSpace($pageToken)) { $queryParams.pageToken = $pageToken }
+            $query = ($queryParams.GetEnumerator() | ForEach-Object { "{0}={1}" -f [uri]::EscapeDataString($_.Key), [uri]::EscapeDataString([string]$_.Value) }) -join "&"
+            $listUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages?$query"
+            $list = Invoke-RestMethod -Method Get -Uri $listUri -Headers $headers
+            $pagesFetched += 1
+            foreach ($messageRef in @($list.messages | Where-Object { $null -ne $_ -and $_.id })) {
+                if ($records.Count -ge $maxToFetch) { break }
+                $formatQuery = if ($includeBodies -or $includeAttachments) {
+                    "format=full"
+                } else {
+                    "format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=Message-ID"
                 }
+                $messageUri = "https://gmail.googleapis.com/gmail/v1/users/me/messages/$([uri]::EscapeDataString([string]$messageRef.id))?$formatQuery"
+                $message = Invoke-RestMethod -Method Get -Uri $messageUri -Headers $headers
+                $attachments = @()
+                if ($includeAttachments -and $message.payload) {
+                    $attachments = @(Get-NomadInboxGmailAttachmentMetadata -Payload $message.payload)
+                }
+                $bodyContent = if ($includeBodies -and $message.payload) { Get-NomadInboxGmailBodyContent -Payload $message.payload } else { [pscustomobject]@{ bodyText = $null; bodyHtml = $null } }
+                $rawRef = $null
+                if ($captureRaw) {
+                    $rawRef = Get-NomadInboxProviderRawId -Provider "gmail-api" -AccountId $Account.id -ProviderMessageId ([string]$message.id)
+                    $rawObject = if ($includeBodies) { $message } else { Copy-NomadInboxJsonObject -InputObject $message }
+                    if (-not $includeBodies) { Remove-NomadInboxGmailInlineBodyData -Node $rawObject }
+                    $rawRecords += New-NomadInboxProviderRawRecord `
+                        -Provider "gmail-api" `
+                        -AccountId $Account.id `
+                        -ProviderMessageId ([string]$message.id) `
+                        -ConversationId ([string]$message.threadId) `
+                        -RawObject $rawObject `
+                        -BodyCaptured:$includeBodies `
+                        -AttachmentMetadataCaptured:$includeAttachments `
+                        -AttachmentBytesCaptured:$false
+                }
+                $records += ConvertFrom-NomadInboxGmailMessage -Message $message -Account $Account -BodyText $bodyContent.bodyText -BodyHtml $bodyContent.bodyHtml -Attachments $attachments -ProviderRawRef $rawRef -RawCaptured:$captureRaw
             }
-            $rawRef = $null
-            if ($captureRaw) {
-                $rawRef = Get-NomadInboxProviderRawId -Provider "gmail-api" -AccountId $Account.id -ProviderMessageId ([string]$message.id)
-                $rawRecords += New-NomadInboxProviderRawRecord `
-                    -Provider "gmail-api" `
-                    -AccountId $Account.id `
-                    -ProviderMessageId ([string]$message.id) `
-                    -ConversationId ([string]$message.threadId) `
-                    -RawObject $message `
-                    -BodyCaptured:$includeBodies `
-                    -AttachmentMetadataCaptured:$includeAttachments `
-                    -AttachmentBytesCaptured:$false
-            }
-            $records += ConvertFrom-NomadInboxGmailMessage -Message $message -Account $Account -Attachments $attachments -ProviderRawRef $rawRef -RawCaptured:$captureRaw
-        }
+            $pageToken = if ($list.nextPageToken) { [string]$list.nextPageToken } else { "" }
+        } while (-not [string]::IsNullOrWhiteSpace($pageToken) -and $records.Count -lt $maxToFetch)
         Write-NomadInboxLiveMessages -Records $records
         if ($rawRecords.Count -gt 0) { Write-NomadInboxProviderRawRecords -Records $rawRecords }
-        Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit } -ResultObject @{ synced = $records.Count } -ErrorMessage $null | Out-Null
+        Write-NomadInboxActionRecord -ActionType "sync" -Status "success" -InputObject @{ accountId = $Account.id; provider = $Account.provider; folder = $Account.folder; limit = $Account.limit; query = $Account.query } -ResultObject @{ synced = $records.Count; pagesFetched = $pagesFetched } -ErrorMessage $null | Out-Null
         return New-NomadInboxSyncResult -Account $Account -Status "ok" -Reason $null -Synced $records.Count -StartedAt $StartedAt
     } catch {
         Write-NomadInboxActionRecord -ActionType "sync" -Status "error" -InputObject @{ accountId = $Account.id; provider = $Account.provider } -ResultObject @{} -ErrorMessage ([string]$_.Exception.Message) | Out-Null
@@ -2325,6 +2437,34 @@ function ConvertTo-NomadInboxArchiveRecordFromObject {
 function Write-NomadInboxArchiveRecords {
     param([array]$Records, [switch]$DryRun)
     if ($DryRun) { return }
+    Initialize-NomadInbox | Out-Null
+    $messagesById = [ordered]@{}
+    $indexById = [ordered]@{}
+    $messagesPath = Get-NomadInboxArchiveMessagesPath
+    $indexPath = Get-NomadInboxArchiveIndexPath
+
+    if (Test-Path -LiteralPath $messagesPath) {
+        foreach ($line in [System.IO.File]::ReadLines($messagesPath)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            try {
+                $existing = $line | ConvertFrom-Json
+                if ($existing.id) { $messagesById[[string]$existing.id] = $existing }
+            } catch {
+            }
+        }
+    }
+
+    if (Test-Path -LiteralPath $indexPath) {
+        foreach ($line in [System.IO.File]::ReadLines($indexPath)) {
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            try {
+                $existing = $line | ConvertFrom-Json
+                if ($existing.id) { $indexById[[string]$existing.id] = $existing }
+            } catch {
+            }
+        }
+    }
+
     foreach ($record in $Records) {
         $index = [pscustomobject]@{
             id = $record.id
@@ -2341,9 +2481,15 @@ function Write-NomadInboxArchiveRecords {
         }
         $recordForStorage = $record.PSObject.Copy()
         $recordForStorage.PSObject.Properties.Remove("searchableText")
-        ($recordForStorage | ConvertTo-Json -Depth 50 -Compress) | Add-Content -LiteralPath (Get-NomadInboxArchiveMessagesPath)
-        ($index | ConvertTo-Json -Depth 30 -Compress) | Add-Content -LiteralPath (Get-NomadInboxArchiveIndexPath)
+        if ($record.id) {
+            $messagesById[[string]$record.id] = $recordForStorage
+            $indexById[[string]$record.id] = $index
+        }
     }
+    $messageLines = @($messagesById.Values | ForEach-Object { $_ | ConvertTo-Json -Depth 50 -Compress })
+    $indexLines = @($indexById.Values | ForEach-Object { $_ | ConvertTo-Json -Depth 30 -Compress })
+    $messageLines | Set-Content -LiteralPath $messagesPath -Encoding UTF8
+    $indexLines | Set-Content -LiteralPath $indexPath -Encoding UTF8
 }
 
 function Import-NomadInboxArchive {

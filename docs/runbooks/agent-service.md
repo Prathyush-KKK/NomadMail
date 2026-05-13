@@ -160,6 +160,7 @@ Use this rule before parsing or syncing email for another repository:
 - Run `dryRun=true` on `nomadmail_import_archive` before writing parsed records.
 - Hand the generated `archive-messages.jsonl`, `messages.jsonl`, and, when the target needs provider-specific evidence, `provider-raw.jsonl` to the target repository's own importer and index command.
 - Treat `messages.jsonl` as the normalized agent/UI contract. Treat `provider-raw.jsonl` as the provider-specific evidence store for fields that do not fit the canonical message model.
+- Use [message-storage.md](message-storage.md) as the storage policy: search normalized/index files first, dereference provider raw only for evidence or provider-specific fields, and never treat archive imports as actionable live mail.
 
 Example external-repository staging flow:
 

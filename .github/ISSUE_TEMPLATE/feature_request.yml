@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest a provider, workflow, action, platform, or documentation improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior or documentation you want.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Provider adapter
+        - MCP tool
+        - HTTP service
+        - Windows tray
+        - Installer
+        - Agent workflow
+        - Backup/restore
+        - Documentation
+        - Platform support
+        - Other
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and privacy considerations
+      description: Does this read mail, store content, send, move, trash, delete, or expose private data?
+    validations:
+      required: true

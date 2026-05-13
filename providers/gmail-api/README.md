@@ -38,4 +38,8 @@ fragile browser/application-default credential path and mints short-lived access
 tokens from a locally ignored refresh token at sync time.
 
 The sync adapter stores normalized metadata/snippets in `data/messages.jsonl`;
-it does not store full Gmail message bodies in the bootstrap adapter.
+it does not store full Gmail message bodies unless `includeBodies` is explicitly
+enabled on the account. When attachment metadata requires a Gmail `format=full`
+response, provider raw snapshots strip inline `body.data` fields before writing
+unless body capture is approved. This keeps attachment discovery available
+without silently storing full message bodies.

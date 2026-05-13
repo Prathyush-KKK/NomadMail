@@ -641,8 +641,14 @@ function agentGuide() {
       activeDataDir: dataDir(),
       rule: "NomadMail writes to NOMADINBOX_DATA_DIR when that environment variable is set. If it is not set, imports and syncs write to NomadInbox's own data directory.",
       targetRepoRule: "For another repository, start the NomadMail MCP/HTTP service or CLI with NOMADINBOX_DATA_DIR set to a staging folder inside that target repository, for example <targetRepo>\\.nomadmail-staging.",
+      normalizedStore: join(dataDir(), "messages.jsonl"),
       rawProviderStore: join(dataDir(), "provider-raw.jsonl"),
-      normalizationRule: "Provider adapters store canonical records in messages.jsonl and provider-specific snapshots in provider-raw.jsonl. Agent/UI reads must normalize records before search, summaries, actions, or digest views."
+      archiveStore: join(dataDir(), "archive-messages.jsonl"),
+      archiveIndex: join(dataDir(), "archive-index.jsonl"),
+      storagePolicy: "docs/runbooks/message-storage.md",
+      normalizationRule: "Provider adapters store canonical records in messages.jsonl and provider-specific snapshots in provider-raw.jsonl. Agent/UI reads must normalize records before search, summaries, actions, or digest views.",
+      gmailBodyRule: "Gmail raw snapshots omit inline body.data unless includeBodies is explicitly enabled. Attachment metadata can still be captured without silently storing full message bodies.",
+      dedupeRule: "Live sync and archive import upsert by deterministic message ids so repeated discovery refreshes records instead of duplicating context."
     },
     generatedReportNaming: {
       rule: "For broad email-range markdown, HTML, or JSON reports, include the mail source and a sortable date or time range in the folder or filename so users can manage generated files later.",
@@ -683,7 +689,7 @@ function agentGuide() {
       "Use nomadmail_execute_message_action only after the selected Outlook Desktop action is approved. Draft actions create drafts only; send-draft needs confirmSend; ordinary state/file actions need confirmAction; trash/delete needs confirmDelete plus confirmFinal.",
       "When the user wants to go to a specific Outlook Desktop mail thread, prefer nomadmail_open_message with the selected message id or conversationId. It uses the preserved Outlook EntryID and only opens the item; it does not mutate the mailbox.",
       "Use nomadmail_sync_once for request-driven sync, or nomadmail_start_service only when the user explicitly wants background sync.",
-      "Gmail API sync requires NOMADINBOX_GMAIL_ACCESS_TOKEN or a Gmail-scoped gcloud login.",
+      "Gmail API sync requires NOMADINBOX_GMAIL_ACCESS_TOKEN, refresh-token config, or a Gmail-scoped gcloud login.",
       "Outlook Graph sync requires NOMADINBOX_GRAPH_ACCESS_TOKEN or an Azure CLI Microsoft Graph token.",
       "Outlook Desktop sync requires the signed-in Windows Outlook profile in the current user session."
     ],

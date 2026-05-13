@@ -1,0 +1,42 @@
+{
+  "name": "nomadinbox",
+  "version": "0.1.0",
+  "description": "Local-first email workspace and NomadMail MCP service for AI agents.",
+  "license": "MIT",
+  "private": false,
+  "keywords": [
+    "mcp",
+    "email",
+    "gmail",
+    "outlook",
+    "mailbox",
+    "ai-agent",
+    "local-first",
+    "gmail-api",
+    "microsoft-graph",
+    "outlook-desktop",
+    "powershell",
+    "windows",
+    "tray-app"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Prathyush-KKK/Nomad-Inbox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Prathyush-KKK/Nomad-Inbox/issues"
+  },
+  "homepage": "https://github.com/Prathyush-KKK/Nomad-Inbox#readme",
+  "scripts": {
+    "self-test": "node service/nomadmail-service.mjs self-test",
+    "mcp": "node service/nomadmail-service.mjs mcp",
+    "http": "node service/nomadmail-service.mjs http",
+    "validate": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/validate.ps1",
+    "test:agent-flow": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/agent-user-flow.ps1",
+    "test:new-clone": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/new-clone.ps1",
+    "test:storage": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/storage-policy.ps1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

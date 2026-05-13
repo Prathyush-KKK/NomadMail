@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Support and setup questions
+    url: https://github.com/Prathyush-KKK/Nomad-Inbox/issues
+    about: Open an issue with redacted setup details. Do not include secrets or mailbox content.
+  - name: Security policy
+    url: https://github.com/Prathyush-KKK/Nomad-Inbox/blob/main/SECURITY.md
+    about: Report sensitive issues without exposing tokens, mailbox content, or private logs.

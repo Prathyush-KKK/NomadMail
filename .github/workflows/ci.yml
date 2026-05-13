@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check Node service syntax
+        shell: pwsh
+        run: node --check .\service\nomadmail-service.mjs
+
+      - name: Run repository validation
+        shell: powershell
+        run: .\scripts\validate.ps1
+
+      - name: Run agent user flow test
+        shell: powershell
+        run: .\tests\agent-user-flow.ps1
+
+      - name: Run clean clone validation
+        shell: powershell
+        run: .\tests\new-clone.ps1 -ExpectedCleanClone

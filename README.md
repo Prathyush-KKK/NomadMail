@@ -1,10 +1,49 @@
 # NomadInbox
 
-NomadInbox is a local-first mailbox workspace for AI agents. NomadMail is the callable service layer that lets agents use the same local mail context through MCP, tray-owned HTTP, or CLI commands.
+![NomadInbox logo](assets/nomadinbox-logo.svg)
 
-Use it when you want an agent to search, summarize, open, and safely prepare actions for Gmail, Microsoft 365, Outlook Desktop, or local email exports without pushing mailbox runtime data to GitHub.
+Local-first email tools for AI agents. NomadInbox lets Codex, Claude Code, Kiro, and other agent runtimes search, summarize, open, draft, and safely act on Gmail, Microsoft 365, Outlook Desktop, and local mail exports without committing mailbox data to GitHub.
 
-For product scope and why this exists, read [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md). For architecture, read [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Use NomadInbox when you want:
+
+- **Agent-readable email context** through MCP, tray-owned HTTP, or CLI commands.
+- **Local-first privacy** with runtime mail data, OAuth tokens, exports, logs, and action audits ignored by Git.
+- **Safer mail actions** where agents draft first, send only after explicit approval, and delete/trash only after double confirmation.
+
+For product scope and why this exists, read [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md). For the technical model, read [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Visual Proof To Add
+
+Before making the public repo launch-ready, upload screenshots or GIFs here:
+
+| Asset to upload | Suggested path | What it should show |
+|---|---|---|
+| Tray status popup screenshot | `assets/screenshots/tray-status-popup.png` | Accounts, sync status, manual sync, settings entry |
+| 60-second demo GIF | `assets/screenshots/nomadinbox-demo.gif` | Install, self-test, tray status, safe mail query |
+| GitHub social preview | repository Settings -> Social preview | 1280x640 image with logo, product name, and one-line promise |
+
+After upload, add the images below this line:
+
+<!--
+![NomadInbox tray status popup](assets/screenshots/tray-status-popup.png)
+![NomadInbox 60-second demo](assets/screenshots/nomadinbox-demo.gif)
+-->
+
+## Current Status
+
+| Area | Status | Notes |
+|---|---|---|
+| Outlook Desktop on Windows | Working | Uses the signed-in local Outlook profile where available. |
+| Gmail API | Working / active hardening | Supports OAuth client and refresh-token based local config. |
+| Outlook / Microsoft 365 Graph | Adapter scaffolded | Intended for Graph-backed mailboxes. |
+| MCP service | Working | `nomadmail` tools expose search, context, handoff, events, and actions. |
+| Tray-owned HTTP service | Working | Loopback service at `127.0.0.1:8791` while the tray is running. |
+| Windows tray client | Working | Compiled local tray client and helper installer. |
+| Local archive import | Working | EML, MBOX, and JSONL imports are read-only context. |
+| Runtime backup/restore | Documented | See [runtime-backup-restore.md](docs/runbooks/runtime-backup-restore.md). |
+| macOS/Linux | Limited | Node service and local context tools are portable; Windows tray and Outlook Desktop COM are Windows-only. |
+
+See [ROADMAP.md](docs/ROADMAP.md) for the public status and direction.
 
 ## Quick Start
 
@@ -15,13 +54,21 @@ git clone https://github.com/Prathyush-KKK/Nomad-Inbox.git
 cd Nomad-Inbox
 ```
 
+Run a safe demo without connecting a mailbox:
+
+```powershell
+.\scripts\nomad-inbox.ps1 setup
+node .\service\nomadmail-service.mjs self-test
+.\scripts\validate.ps1
+```
+
 On Windows, install the helper, start the compiled tray, register it for user login startup, and open the tray status popup:
 
 ```powershell
 .\scripts\nomad-inbox.ps1 install windows-helper --start-tray --register-startup --show-popup
 ```
 
-A clone alone cannot start a tray app; the install command above creates the user-local helper and Windows Startup shortcut. It does not connect accounts, read mail, enable auto sync, or send anything.
+A clone alone cannot start a tray app. The install command creates the user-local helper and Windows Startup shortcut. It does not connect accounts, read mail, enable auto sync, or send anything.
 
 Check the install:
 
@@ -52,14 +99,23 @@ Supported source paths:
 - Gmail / Google Workspace through Gmail API
 - local mail exports: EML, MBOX, JSONL
 
-## Use From Another Chat
+## Use In Your Own Repository
 
-Give another agent this prompt:
+NomadInbox is open source. You can use it as a local mailbox service alongside another project without copying mailbox data into that project.
+
+Recommended pattern:
+
+1. Clone NomadInbox once on the machine.
+2. Install or start the local service from this repo.
+3. In another repo, tell your agent where NomadInbox lives.
+4. Let the agent call NomadMail through MCP first, tray-owned HTTP second, and CLI third.
+
+Agent prompt:
 
 ```text
 Use NomadInbox from this workspace:
 
-C:\Users\prat\Documents\osm\NomadInbox
+<path-to-NomadInbox>
 
 First read AGENTS.md, then run:
 
@@ -125,7 +181,7 @@ Ignored local data includes:
 
 Use `NOMADINBOX_DATA_DIR` to place runtime data somewhere else.
 
-Backup/restore of NomadInbox runtime data: [runtime-backup-restore.md](docs/runbooks/runtime-backup-restore.md). Archive import: [archive-import.md](docs/runbooks/archive-import.md).
+Backup/restore of NomadInbox runtime data: [runtime-backup-restore.md](docs/runbooks/runtime-backup-restore.md). Archive import: [archive-import.md](docs/runbooks/archive-import.md). Storage and retrieval policy: [message-storage.md](docs/runbooks/message-storage.md).
 
 ## Safety Rules
 
@@ -173,6 +229,15 @@ node .\service\nomadmail-service.mjs cross-chat-handoff
 .\tests\agent-user-flow.ps1
 .\tests\new-clone.ps1
 ```
+
+## Contribute
+
+NomadInbox is intended to be usable and extensible by other repositories and agents.
+
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+- Report security issues through [SECURITY.md](SECURITY.md).
+- Ask usage questions through [SUPPORT.md](SUPPORT.md).
+- Check release packaging in [release.md](docs/runbooks/release.md).
 
 ## Release
 

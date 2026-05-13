@@ -262,6 +262,19 @@ provider-specific fields. Account settings decide whether raw provider data,
 body text/html, attachment metadata, and attachment bytes are captured; attachment
 bytes stay off by default.
 
+Gmail is handled carefully because attachment discovery may require a `full`
+message response that can also contain inline body data. When `includeBodies` is
+false, the Gmail adapter strips inline `body.data` fields from provider raw
+snapshots before writing them. When `includeBodies` is true, decoded text/html
+body content is stored in the normalized row and the raw snapshot may retain the
+provider body fields. This keeps attachment discovery useful without silently
+turning metadata sync into full-body storage.
+
+Repeated live syncs upsert by deterministic live message id. Repeated archive
+imports upsert by deterministic archive message id and update the companion
+archive search index instead of appending duplicates. The detailed storage policy
+is documented in [Message Storage And Retrieval Policy](runbooks/message-storage.md).
+
 Read paths normalize records before search, summaries, action guidance, or digest
 views. This protects older JSONL rows, archive imports, and future schema changes
 from leaking provider-specific shape differences into the agent or tray UI.
