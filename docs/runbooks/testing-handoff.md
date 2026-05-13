@@ -155,8 +155,8 @@ Expected observations:
 On a new machine:
 
 ```powershell
-git clone https://github.com/Prathyush-KKK/Nomad-Inbox
-cd Nomad-Inbox
+git clone https://github.com/Prathyush-KKK/NomadMail
+cd NomadMail
 .\tests\new-clone.ps1 -ExpectedCleanClone -OutputPath runtime\agent-scratch\new-clone-validation.json
 ```
 

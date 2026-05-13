@@ -21,12 +21,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Prathyush-KKK/Nomad-Inbox.git"
+    "url": "git+https://github.com/Prathyush-KKK/NomadMail.git"
   },
   "bugs": {
-    "url": "https://github.com/Prathyush-KKK/Nomad-Inbox/issues"
+    "url": "https://github.com/Prathyush-KKK/NomadMail/issues"
   },
-  "homepage": "https://github.com/Prathyush-KKK/Nomad-Inbox#readme",
+  "homepage": "https://github.com/Prathyush-KKK/NomadMail#readme",
   "scripts": {
     "self-test": "node service/nomadmail-service.mjs self-test",
     "mcp": "node service/nomadmail-service.mjs mcp",

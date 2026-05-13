@@ -50,8 +50,8 @@ See [ROADMAP.md](docs/ROADMAP.md) for the public status and direction.
 Clone and open the workspace:
 
 ```powershell
-git clone https://github.com/Prathyush-KKK/Nomad-Inbox.git
-cd Nomad-Inbox
+git clone https://github.com/Prathyush-KKK/NomadMail.git
+cd NomadMail
 ```
 
 Run a safe demo without connecting a mailbox:
