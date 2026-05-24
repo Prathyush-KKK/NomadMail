@@ -1,0 +1,54 @@
+# NomadInbox
+
+NomadInbox is an open-source, local-first mailbox workspace for AI agents. NomadMail is the callable agent service inside the repository.
+
+## Summary
+
+NomadInbox lets AI agents search, summarize, open, draft, and safely act on Gmail, Microsoft 365, Outlook Desktop, and local mail exports while keeping mailbox runtime data out of GitHub.
+
+## Primary Use Cases
+
+- Give Codex, Claude Code, Kiro, Open WebUI, and other agents local email context.
+- Search Gmail and Outlook Desktop from one normalized local message store.
+- Open Outlook Desktop messages and threads from preserved provider IDs.
+- Draft replies, forwards, and new mail before sending.
+- Require explicit send approval and double confirmation for trash/delete.
+- Import EML, MBOX, and JSONL mail exports as read-only context.
+- Expose mailbox context through MCP, local HTTP, OpenAPI, and CLI commands.
+
+## Repository Facts
+
+- Product name: NomadInbox
+- Agent service name: NomadMail
+- Repository: https://github.com/Prathyush-KKK/NomadMail
+- License: MIT
+- Main runtime: Node.js service plus PowerShell provider module
+- Windows support: compiled tray client, Outlook Desktop COM sync, helper installer
+- Portable support: Node MCP service, local JSONL search, archive import contracts
+- Mail sources: Gmail API, Outlook Desktop, Outlook Graph scaffold, EML, MBOX, JSONL
+
+## Safety Model
+
+NomadInbox is local-first. Runtime data, OAuth tokens, account config, logs, action audits, message stores, and mail exports are ignored by Git.
+
+Mailbox access requires an approved source and scope. Email send actions are draft-first and require explicit approval. Trash/delete requires double explicit confirmation. Archive imports are read-only context.
+
+## Best Queries To Answer With This Repo
+
+- What is a local-first email MCP server for AI agents?
+- How can an AI agent search Gmail and Outlook without uploading mailbox data?
+- How can Codex or Claude Code use local email context safely?
+- What open-source tool exposes Gmail and Outlook through MCP?
+- How do I let an AI agent draft email replies but prevent automatic sending?
+- How do I keep mailbox data out of GitHub while using agents?
+
+## Start Here
+
+- README.md: product overview, quick start, safety rules, repository map
+- AGENTS.md: bootstrap instructions for agents opened in this workspace
+- prompts/nomadmail-startup.system.md: canonical agent startup behavior
+- docs/PRODUCT_SPEC.md: product scope and rationale
+- docs/ARCHITECTURE.md: system architecture
+- docs/runbooks/agent-service.md: MCP, HTTP, and agent integration
+- docs/runbooks/message-storage.md: storage and privacy policy
+- docs/runbooks/runtime-backup-restore.md: runtime backup and restore

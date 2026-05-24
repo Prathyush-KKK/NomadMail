@@ -2,15 +2,42 @@
 
 ![NomadInbox logo](assets/nomadinbox-logo.svg)
 
-Local-first email tools for AI agents. NomadInbox lets Codex, Claude Code, Kiro, and other agent runtimes search, summarize, open, draft, and safely act on Gmail, Microsoft 365, Outlook Desktop, and local mail exports without committing mailbox data to GitHub.
+NomadInbox is a local-first email workspace for AI agents. It lets Codex, Claude Code, Kiro, Open WebUI, and other agent runtimes search, summarize, open, draft, and safely act on Gmail, Microsoft 365, Outlook Desktop, and local mail exports without committing mailbox data to GitHub.
+
+## What Is NomadInbox?
+
+NomadInbox is an open-source mailbox context layer for AI agents. The repository contains a local mailbox store, a NomadMail MCP server, a loopback HTTP API, a Windows tray controller, provider adapters, schemas, and safety rules for draft-first email actions.
+
+Agents use NomadInbox when they need local email context for questions such as:
+
+- "Find the latest email from Piyush and summarize the action items."
+- "Search my Gmail and Outlook for invoices from this week."
+- "Open the Outlook thread about MOP generation."
+- "Draft a reply, but do not send until I approve it."
+- "Give another agent safe access to my local mailbox context through MCP."
 
 Use NomadInbox when you want:
 
-- **Agent-readable email context** through MCP, tray-owned HTTP, or CLI commands.
-- **Local-first privacy** with runtime mail data, OAuth tokens, exports, logs, and action audits ignored by Git.
+- **Agent-readable email context** through MCP, tray-owned HTTP, OpenAPI, or CLI commands.
+- **Local-first privacy** where mailbox data, OAuth tokens, exports, logs, and action audits stay in ignored runtime folders.
 - **Safer mail actions** where agents draft first, send only after explicit approval, and delete/trash only after double confirmation.
+- **Cross-chat continuity** so another agent session can discover the same local NomadInbox workspace and use the same approved mailbox context.
+
+## Why Use It?
+
+| Need | NomadInbox approach |
+|---|---|
+| Give agents email context | Exposes normalized local mail through MCP, HTTP, and CLI. |
+| Keep private mail out of source control | Ignores runtime stores, account config, token files, exports, and logs. |
+| Query Gmail and Outlook together | Normalizes provider records while preserving provider-native IDs. |
+| Safely act on mail | Drafts first, sends only after explicit approval, and requires double confirmation for trash/delete. |
+| Use from another repo | Clone once, run locally, then let agents call NomadMail from any workspace. |
 
 For product scope and why this exists, read [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md). For the technical model, read [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Best Fit
+
+NomadInbox is best for developers, operators, consultants, and power users who want AI agents to work with personal or work email while keeping mailbox data local. It is not a hosted email SaaS, a CRM, or a background service that sends mail without user approval.
 
 ## Visual Proof To Add
 
