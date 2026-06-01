@@ -39,22 +39,6 @@ For product scope and why this exists, read [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.
 
 NomadInbox is best for developers, operators, consultants, and power users who want AI agents to work with personal or work email while keeping mailbox data local. It is not a hosted email SaaS, a CRM, or a background service that sends mail without user approval.
 
-## Visual Proof To Add
-
-Before making the public repo launch-ready, upload screenshots or GIFs here:
-
-| Asset to upload | Suggested path | What it should show |
-|---|---|---|
-| Tray status popup screenshot | `assets/screenshots/tray-status-popup.png` | Accounts, sync status, manual sync, settings entry |
-| 60-second demo GIF | `assets/screenshots/nomadinbox-demo.gif` | Install, self-test, tray status, safe mail query |
-| GitHub social preview | repository Settings -> Social preview | 1280x640 image with logo, product name, and one-line promise |
-
-After upload, add the images below this line:
-
-<!--
-![NomadInbox tray status popup](assets/screenshots/tray-status-popup.png)
-![NomadInbox 60-second demo](assets/screenshots/nomadinbox-demo.gif)
--->
 
 ## Current Status
 
